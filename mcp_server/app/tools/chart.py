@@ -1,21 +1,13 @@
 """
 Visualization Tools for PanKB MCP Server
 
-These tools generate matplotlib figures and return them as MCP Image objects.
+These tools return Plotly-compatible JSON data for interactive chart rendering.
 """
-from typing import Optional, Union
-from collections import Counter
+from typing import Optional
+import json
 import logging
-import io
-
-import matplotlib.pyplot as plt
-import matplotlib
-matplotlib.use('Agg')  # Non-interactive backend
-from matplotlib.patches import Patch
-import numpy as np
 
 from fastmcp import FastMCP
-from fastmcp.utilities.types import Image
 
 from app.config import Config
 from app.utils.connections import mongo_client
@@ -39,22 +31,26 @@ COG_NAMES = {
 }
 
 
-def fig_to_image(fig) -> Image:
-    """Convert matplotlib figure to MCP Image object"""
-    buf = io.BytesIO()
-    fig.savefig(buf, format='png', dpi=150, bbox_inches='tight', facecolor='white')
-    buf.seek(0)
-    plt.close(fig)
-    return Image(data=buf.getvalue(), format="png")
+def make_chart_response(chart_type: str, title: str, data: dict, layout: dict = None) -> str:
+    """Create a standardized chart response in JSON format"""
+    response = {
+        "type": "chart",
+        "chart_type": chart_type,
+        "title": title,
+        "data": data,
+        "layout": layout or {}
+    }
+    return json.dumps(response)
 
 
 mcp = FastMCP(name="ChartTools")
 
 
 @mcp.tool()
-def plot_gene_frequency_histogram(pangenome_analysis: str) -> Union[Image, str]:
+def plot_gene_frequency_histogram(pangenome_analysis: str) -> str:
     """
     Generate gene frequency histogram (U-shape curve) for a species.
+    Returns Plotly-compatible JSON data for interactive visualization.
 
     Args:
         pangenome_analysis: Species pangenome analysis name (e.g., 'Escherichia_coli')
@@ -74,22 +70,27 @@ def plot_gene_frequency_histogram(pangenome_analysis: str) -> Union[Image, str]:
     frequencies = [r["_id"] for r in results]
     counts = [r["count"] for r in results]
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.bar(frequencies, counts, color='steelblue', alpha=0.7, width=1.0)
-    ax.set_xlabel('Gene Frequency (number of genomes)', fontsize=12)
-    ax.set_ylabel('Number of Genes', fontsize=12)
-    ax.set_title(f'Gene Frequency Distribution\n{pangenome_analysis.replace("_", " ")}', fontsize=14)
-    ax.set_yscale('log')
-    ax.grid(True, alpha=0.3)
-    ax.set_axisbelow(True)
-
-    return fig_to_image(fig)
+    return make_chart_response(
+        chart_type="bar",
+        title=f"Gene Frequency Distribution - {pangenome_analysis.replace('_', ' ')}",
+        data={
+            "x": frequencies,
+            "y": counts,
+            "labels": {"x": "Gene Frequency (number of genomes)", "y": "Number of Genes"}
+        },
+        layout={
+            "yaxis_type": "log",
+            "bargap": 0,
+            "color": "steelblue"
+        }
+    )
 
 
 @mcp.tool()
-def plot_pangenome_class_distribution(pangenome_analysis: str) -> Union[Image, str]:
+def plot_pangenome_class_distribution(pangenome_analysis: str) -> str:
     """
     Generate pie chart showing Core/Accessory/Rare gene distribution for a species.
+    Returns Plotly-compatible JSON data for interactive visualization.
 
     Args:
         pangenome_analysis: Species pangenome analysis name (e.g., 'Bacillus_subtilis')
@@ -107,30 +108,32 @@ def plot_pangenome_class_distribution(pangenome_analysis: str) -> Union[Image, s
 
     class_counts = {r["_id"]: r["count"] for r in results}
     labels = []
-    sizes = []
+    values = []
     colors = []
 
     for cls in ['Core', 'Accessory', 'Rare']:
         if cls in class_counts:
             labels.append(cls)
-            sizes.append(class_counts[cls])
+            values.append(class_counts[cls])
             colors.append(PANGENOME_COLORS.get(cls, 'gray'))
 
-    fig, ax = plt.subplots(figsize=(8, 8))
-    ax.pie(
-        sizes, labels=labels, colors=colors,
-        autopct=lambda pct: f'{pct:.1f}%\n({int(pct/100*sum(sizes)):,})',
-        startangle=90, explode=[0.02] * len(sizes)
+    return make_chart_response(
+        chart_type="pie",
+        title=f"Pangenome Class Distribution - {pangenome_analysis.replace('_', ' ')}",
+        data={
+            "labels": labels,
+            "values": values,
+            "colors": colors
+        },
+        layout={}
     )
-    ax.set_title(f'Pangenome Class Distribution\n{pangenome_analysis.replace("_", " ")}', fontsize=14)
-
-    return fig_to_image(fig)
 
 
 @mcp.tool()
-def plot_cog_category_distribution(pangenome_analysis: str, top_n: int = 15) -> Union[Image, str]:
+def plot_cog_category_distribution(pangenome_analysis: str, top_n: int = 15) -> str:
     """
     Generate bar chart showing COG functional category distribution for a species.
+    Returns Plotly-compatible JSON data for interactive visualization.
 
     Args:
         pangenome_analysis: Species pangenome analysis name
@@ -153,29 +156,25 @@ def plot_cog_category_distribution(pangenome_analysis: str, top_n: int = 15) -> 
     counts = [r["count"] for r in results]
     labels = [f"{cat}: {COG_NAMES.get(cat, 'Unknown')}" for cat in categories]
 
-    fig, ax = plt.subplots(figsize=(12, 6))
-    colors = plt.cm.viridis([i/len(categories) for i in range(len(categories))])
-    ax.barh(range(len(categories)), counts, color=colors)
-
-    ax.set_yticks(range(len(categories)))
-    ax.set_yticklabels(labels)
-    ax.set_xlabel('Number of Genes', fontsize=12)
-    ax.set_title(f'COG Category Distribution\n{pangenome_analysis.replace("_", " ")}', fontsize=14)
-    ax.invert_yaxis()
-
-    for i, count in enumerate(counts):
-        ax.text(count + max(counts)*0.01, i, f'{count:,}', va='center', fontsize=9)
-
-    ax.set_xlim(0, max(counts) * 1.15)
-    ax.grid(True, axis='x', alpha=0.3)
-
-    return fig_to_image(fig)
+    return make_chart_response(
+        chart_type="bar_horizontal",
+        title=f"COG Category Distribution - {pangenome_analysis.replace('_', ' ')}",
+        data={
+            "x": counts,
+            "y": labels,
+            "labels": {"x": "Number of Genes", "y": "COG Category"}
+        },
+        layout={
+            "color": "viridis"
+        }
+    )
 
 
 @mcp.tool()
-def plot_species_comparison(family: str, top_n: int = 10) -> Union[Image, str]:
+def plot_species_comparison(family: str, top_n: int = 10) -> str:
     """
     Generate stacked bar chart comparing Core/Accessory/Rare genes across species in a family.
+    Returns Plotly-compatible JSON data for interactive visualization.
 
     Args:
         family: Family name to compare species (e.g., 'Bacillaceae')
@@ -208,31 +207,27 @@ def plot_species_comparison(family: str, top_n: int = 10) -> Union[Image, str]:
             accessory_counts.append(0)
             rare_counts.append(0)
 
-    fig, ax = plt.subplots(figsize=(12, 6))
-
-    x = range(len(species_names))
-    width = 0.6
-
-    ax.bar(x, core_counts, width, label='Core', color=PANGENOME_COLORS['Core'])
-    ax.bar(x, accessory_counts, width, bottom=core_counts, label='Accessory', color=PANGENOME_COLORS['Accessory'])
-    ax.bar(x, rare_counts, width, bottom=[c+a for c, a in zip(core_counts, accessory_counts)],
-           label='Rare', color=PANGENOME_COLORS['Rare'])
-
-    ax.set_ylabel('Number of Genes', fontsize=12)
-    ax.set_title(f'Pangenome Composition by Species\nFamily: {family}', fontsize=14)
-    ax.set_xticks(x)
-    ax.set_xticklabels(species_names, rotation=45, ha='right', fontsize=10)
-    ax.legend(loc='upper right')
-    ax.grid(True, axis='y', alpha=0.3)
-
-    plt.tight_layout()
-    return fig_to_image(fig)
+    return make_chart_response(
+        chart_type="bar_stacked",
+        title=f"Pangenome Composition by Species - Family: {family}",
+        data={
+            "x": species_names,
+            "series": [
+                {"name": "Core", "values": core_counts, "color": PANGENOME_COLORS['Core']},
+                {"name": "Accessory", "values": accessory_counts, "color": PANGENOME_COLORS['Accessory']},
+                {"name": "Rare", "values": rare_counts, "color": PANGENOME_COLORS['Rare']}
+            ],
+            "labels": {"x": "Species", "y": "Number of Genes"}
+        },
+        layout={}
+    )
 
 
 @mcp.tool()
-def plot_genome_count_by_family(family: Optional[str] = None, top_n: int = 15) -> Union[Image, str]:
+def plot_genome_count_by_family(family: Optional[str] = None, top_n: int = 15) -> str:
     """
     Generate bar chart showing genome counts across families or species.
+    Returns Plotly-compatible JSON data for interactive visualization.
 
     Args:
         family: Optional: filter by family name to show species within
@@ -247,7 +242,7 @@ def plot_genome_count_by_family(family: Optional[str] = None, top_n: int = 15) -
             {"$limit": top_n},
             {"$project": {"name": "$species", "count": "$genomes_num"}}
         ]
-        title = f"Genome Count by Species\nFamily: {family}"
+        title = f"Genome Count by Species - Family: {family}"
     else:
         pipeline = [
             {"$group": {"_id": "$family", "count": {"$sum": "$genomes_num"}}},
@@ -265,28 +260,25 @@ def plot_genome_count_by_family(family: Optional[str] = None, top_n: int = 15) -
     names = [r.get("name", "Unknown").replace("_", " ") for r in results]
     counts = [r.get("count", 0) for r in results]
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.barh(range(len(names)), counts, color='steelblue')
-
-    ax.set_yticks(range(len(names)))
-    ax.set_yticklabels(names)
-    ax.set_xlabel('Number of Genomes', fontsize=12)
-    ax.set_title(title, fontsize=14)
-    ax.invert_yaxis()
-
-    for i, count in enumerate(counts):
-        ax.text(count + max(counts)*0.01, i, f'{count:,}', va='center', fontsize=9)
-
-    ax.set_xlim(0, max(counts) * 1.15)
-    ax.grid(True, axis='x', alpha=0.3)
-
-    return fig_to_image(fig)
+    return make_chart_response(
+        chart_type="bar_horizontal",
+        title=title,
+        data={
+            "x": counts,
+            "y": names,
+            "labels": {"x": "Number of Genomes", "y": ""}
+        },
+        layout={
+            "color": "steelblue"
+        }
+    )
 
 
 @mcp.tool()
-def plot_gc_content_distribution(pangenome_analysis: str) -> Union[Image, str]:
+def plot_gc_content_distribution(pangenome_analysis: str) -> str:
     """
     Generate histogram of GC content distribution for genomes in a species.
+    Returns Plotly-compatible JSON data for interactive visualization.
 
     Args:
         pangenome_analysis: Species pangenome analysis name
@@ -306,24 +298,29 @@ def plot_gc_content_distribution(pangenome_analysis: str) -> Union[Image, str]:
     if not gc_values:
         return f"No GC content data for {pangenome_analysis}"
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.hist(gc_values, bins=30, color='steelblue', alpha=0.7, edgecolor='white')
-    mean_gc = sum(gc_values)/len(gc_values)
-    ax.axvline(mean_gc, color='red', linestyle='--', label=f'Mean: {mean_gc:.2f}%')
+    mean_gc = sum(gc_values) / len(gc_values)
 
-    ax.set_xlabel('GC Content (%)', fontsize=12)
-    ax.set_ylabel('Number of Genomes', fontsize=12)
-    ax.set_title(f'GC Content Distribution\n{pangenome_analysis.replace("_", " ")}', fontsize=14)
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-
-    return fig_to_image(fig)
+    return make_chart_response(
+        chart_type="histogram",
+        title=f"GC Content Distribution - {pangenome_analysis.replace('_', ' ')}",
+        data={
+            "values": gc_values,
+            "labels": {"x": "GC Content (%)", "y": "Number of Genomes"},
+            "mean": mean_gc
+        },
+        layout={
+            "nbins": 30,
+            "color": "steelblue",
+            "vline": {"x": mean_gc, "color": "red", "label": f"Mean: {mean_gc:.2f}%"}
+        }
+    )
 
 
 @mcp.tool()
-def plot_geographic_distribution(pangenome_analysis: Optional[str] = None, top_n: int = 20) -> Union[Image, str]:
+def plot_geographic_distribution(pangenome_analysis: Optional[str] = None, top_n: int = 20) -> str:
     """
     Generate bar chart showing geographic distribution of genomes by country.
+    Returns Plotly-compatible JSON data for interactive visualization.
 
     Args:
         pangenome_analysis: Optional: filter by species pangenome analysis name
@@ -348,6 +345,7 @@ def plot_geographic_distribution(pangenome_analysis: Optional[str] = None, top_n
             {"$limit": top_n}
         ]
         results = list(genome_collection.aggregate(pipeline))
+        title = f"Geographic Distribution - {pangenome_analysis.replace('_', ' ')}"
     else:
         collection = mongo_client.get_collection(Config.COLLECTIONS["isolation_info"])
         pipeline = [
@@ -357,6 +355,7 @@ def plot_geographic_distribution(pangenome_analysis: Optional[str] = None, top_n
             {"$limit": top_n}
         ]
         results = list(collection.aggregate(pipeline))
+        title = "Geographic Distribution of Genomes"
 
     if not results:
         return "No geographic data found"
@@ -364,32 +363,25 @@ def plot_geographic_distribution(pangenome_analysis: Optional[str] = None, top_n
     countries = [r["_id"] if r["_id"] else "Unknown" for r in results]
     counts = [r["count"] for r in results]
 
-    fig, ax = plt.subplots(figsize=(12, 6))
-    colors = plt.cm.Blues([0.3 + 0.7 * i / len(countries) for i in range(len(countries))])
-    ax.barh(range(len(countries)), counts, color=colors)
-
-    ax.set_yticks(range(len(countries)))
-    ax.set_yticklabels(countries)
-    ax.set_xlabel('Number of Genomes', fontsize=12)
-    title = f'Geographic Distribution of Genomes'
-    if pangenome_analysis:
-        title += f'\n{pangenome_analysis.replace("_", " ")}'
-    ax.set_title(title, fontsize=14)
-    ax.invert_yaxis()
-
-    for i, count in enumerate(counts):
-        ax.text(count + max(counts)*0.01, i, f'{count:,}', va='center', fontsize=9)
-
-    ax.set_xlim(0, max(counts) * 1.15)
-    ax.grid(True, axis='x', alpha=0.3)
-
-    return fig_to_image(fig)
+    return make_chart_response(
+        chart_type="bar_horizontal",
+        title=title,
+        data={
+            "x": counts,
+            "y": countries,
+            "labels": {"x": "Number of Genomes", "y": "Country"}
+        },
+        layout={
+            "color": "Blues"
+        }
+    )
 
 
 @mcp.tool()
-def plot_isolation_source_distribution(pangenome_analysis: Optional[str] = None, top_n: int = 10) -> Union[Image, str]:
+def plot_isolation_source_distribution(pangenome_analysis: Optional[str] = None, top_n: int = 10) -> str:
     """
     Generate pie chart showing distribution of isolation sources for genomes.
+    Returns Plotly-compatible JSON data for interactive visualization.
 
     Args:
         pangenome_analysis: Optional: filter by species pangenome analysis name
@@ -414,6 +406,7 @@ def plot_isolation_source_distribution(pangenome_analysis: Optional[str] = None,
             {"$limit": top_n}
         ]
         results = list(genome_collection.aggregate(pipeline))
+        title = f"Isolation Source Distribution - {pangenome_analysis.replace('_', ' ')}"
     else:
         collection = mongo_client.get_collection(Config.COLLECTIONS["isolation_info"])
         pipeline = [
@@ -423,6 +416,7 @@ def plot_isolation_source_distribution(pangenome_analysis: Optional[str] = None,
             {"$limit": top_n}
         ]
         results = list(collection.aggregate(pipeline))
+        title = "Isolation Source Distribution"
 
     if not results:
         return "No isolation source data found"
@@ -430,26 +424,22 @@ def plot_isolation_source_distribution(pangenome_analysis: Optional[str] = None,
     sources = [r["_id"] if r["_id"] else "Unknown" for r in results]
     counts = [r["count"] for r in results]
 
-    fig, ax = plt.subplots(figsize=(10, 8))
-    colors = plt.cm.Set3(range(len(sources)))
-    ax.pie(
-        counts, labels=sources, colors=colors,
-        autopct=lambda pct: f'{pct:.1f}%' if pct > 3 else '',
-        startangle=90
+    return make_chart_response(
+        chart_type="pie",
+        title=title,
+        data={
+            "labels": sources,
+            "values": counts
+        },
+        layout={}
     )
-
-    title = 'Isolation Source Distribution'
-    if pangenome_analysis:
-        title += f'\n{pangenome_analysis.replace("_", " ")}'
-    ax.set_title(title, fontsize=14)
-
-    return fig_to_image(fig)
 
 
 @mcp.tool()
-def plot_phylogroup_distribution(pangenome_analysis: str) -> Union[Image, str]:
+def plot_phylogroup_distribution(pangenome_analysis: str) -> str:
     """
     Generate bar chart showing phylogroup distribution for a species.
+    Returns Plotly-compatible JSON data for interactive visualization.
 
     Args:
         pangenome_analysis: Species pangenome analysis name
@@ -470,29 +460,25 @@ def plot_phylogroup_distribution(pangenome_analysis: str) -> Union[Image, str]:
     phylogroups = [r["_id"] if r["_id"] else "Unknown" for r in results]
     counts = [r["count"] for r in results]
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    colors = plt.cm.tab10(range(len(phylogroups)))
-    ax.bar(range(len(phylogroups)), counts, color=colors)
-
-    ax.set_xticks(range(len(phylogroups)))
-    ax.set_xticklabels(phylogroups, fontsize=11)
-    ax.set_xlabel('Phylogroup', fontsize=12)
-    ax.set_ylabel('Number of Genomes', fontsize=12)
-    ax.set_title(f'Phylogroup Distribution\n{pangenome_analysis.replace("_", " ")}', fontsize=14)
-    ax.grid(True, axis='y', alpha=0.3)
-
-    for i, count in enumerate(counts):
-        ax.text(i, count + max(counts)*0.02, f'{count}', ha='center', fontsize=10)
-
-    ax.set_ylim(0, max(counts) * 1.15)
-
-    return fig_to_image(fig)
+    return make_chart_response(
+        chart_type="bar",
+        title=f"Phylogroup Distribution - {pangenome_analysis.replace('_', ' ')}",
+        data={
+            "x": phylogroups,
+            "y": counts,
+            "labels": {"x": "Phylogroup", "y": "Number of Genomes"}
+        },
+        layout={
+            "color": "tab10"
+        }
+    )
 
 
 @mcp.tool()
-def plot_pangenome_openness(family: Optional[str] = None, top_n: int = 20) -> Union[Image, str]:
+def plot_pangenome_openness(family: Optional[str] = None, top_n: int = 20) -> str:
     """
-    Generate bar chart comparing pangenome openness (Open/Closed) across species.
+    Generate chart comparing pangenome openness (Open/Closed) across species.
+    Returns Plotly-compatible JSON data for interactive visualization.
 
     Args:
         family: Optional: filter by family name
@@ -528,38 +514,32 @@ def plot_pangenome_openness(family: Optional[str] = None, top_n: int = 20) -> Un
         openness_values.append(openness)
         colors.append(openness_colors.get(openness, 'gray'))
 
-    fig, ax = plt.subplots(figsize=(12, 8))
-    y_pos = range(len(species_names))
-    ax.barh(y_pos, [1] * len(species_names), color=colors, height=0.7)
-
-    ax.set_yticks(y_pos)
-    ax.set_yticklabels(species_names, fontsize=10)
-    ax.set_xlim(0, 1.5)
-    ax.set_xticks([])
-
-    title = 'Pangenome Openness by Species'
+    title = "Pangenome Openness by Species"
     if family:
-        title += f'\nFamily: {family}'
-    ax.set_title(title, fontsize=14)
-    ax.invert_yaxis()
+        title += f" - Family: {family}"
 
-    for i, openness in enumerate(openness_values):
-        ax.text(0.5, i, openness, ha='center', va='center', fontsize=9, fontweight='bold')
-
-    legend_elements = [
-        Patch(facecolor='#2ecc71', label='Closed'),
-        Patch(facecolor='#f39c12', label='Intermediate Open'),
-        Patch(facecolor='#e74c3c', label='Open')
-    ]
-    ax.legend(handles=legend_elements, loc='upper right')
-
-    return fig_to_image(fig)
+    return make_chart_response(
+        chart_type="bar_categorical",
+        title=title,
+        data={
+            "y": species_names,
+            "categories": openness_values,
+            "colors": colors,
+            "legend": [
+                {"label": "Closed", "color": "#2ecc71"},
+                {"label": "Intermediate Open", "color": "#f39c12"},
+                {"label": "Open", "color": "#e74c3c"}
+            ]
+        },
+        layout={}
+    )
 
 
 @mcp.tool()
-def plot_phylon_heatmap(pangenome_analysis: str, max_genomes: int = 50) -> Union[Image, str]:
+def plot_phylon_heatmap(pangenome_analysis: str, max_genomes: int = 50) -> str:
     """
     Generate heatmap showing phylon weights for genomes in a species.
+    Returns Plotly-compatible JSON data for interactive visualization.
 
     Args:
         pangenome_analysis: Species pangenome analysis name
@@ -592,22 +572,16 @@ def plot_phylon_heatmap(pangenome_analysis: str, max_genomes: int = 50) -> Union
     if not weight_matrix:
         return f"No phylon weights found for {pangenome_analysis}"
 
-    weight_array = np.array(weight_matrix)
-    n_phylons = len(phylon_keys)
-
-    fig, ax = plt.subplots(figsize=(max(10, n_phylons * 0.5), max(8, len(genome_ids) * 0.25)))
-
-    im = ax.imshow(weight_array, aspect='auto', cmap='YlOrRd')
-
-    ax.set_yticks(range(len(genome_ids)))
-    ax.set_yticklabels(genome_ids, fontsize=8)
-    ax.set_xticks(range(n_phylons))
-    ax.set_xticklabels([f'P{k}' for k in phylon_keys], fontsize=9)
-    ax.set_xlabel('Phylon', fontsize=12)
-    ax.set_ylabel('Genome', fontsize=12)
-    ax.set_title(f'Phylon Weight Heatmap\n{pangenome_analysis.replace("_", " ")}', fontsize=14)
-
-    plt.colorbar(im, ax=ax, label='Weight')
-
-    plt.tight_layout()
-    return fig_to_image(fig)
+    return make_chart_response(
+        chart_type="heatmap",
+        title=f"Phylon Weight Heatmap - {pangenome_analysis.replace('_', ' ')}",
+        data={
+            "z": weight_matrix,
+            "x": [f"P{k}" for k in phylon_keys],
+            "y": genome_ids,
+            "labels": {"x": "Phylon", "y": "Genome"}
+        },
+        layout={
+            "colorscale": "YlOrRd"
+        }
+    )

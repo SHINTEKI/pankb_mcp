@@ -18,6 +18,19 @@ logger = logging.getLogger(__name__)
 mcp = FastMCP(name="QueryTools")
 
 
+def make_table_response(title: str, columns: list[str], rows: list[dict], summary: str = "") -> str:
+    """Create a standardized table response in JSON format for frontend rendering"""
+    response = {
+        "type": "table",
+        "title": title,
+        "columns": columns,
+        "rows": rows,
+        "summary": summary,
+        "row_count": len(rows)
+    }
+    return json.dumps(response)
+
+
 @mcp.tool()
 def query_families(family: Optional[str] = None) -> str:
     """
@@ -51,19 +64,21 @@ def query_families(family: Optional[str] = None) -> str:
     if not results:
         return "No families found."
 
-    formatted = []
+    rows = []
     for r in results:
-        formatted.append({
+        rows.append({
             "family": r["_id"],
             "species_count": r["species_count"],
             "total_genomes": r["total_genomes"],
             "total_genes": r["total_genes"]
         })
 
-    df = pd.DataFrame(formatted)
-    table = df.to_markdown(index=False)
-
-    return f"Found {len(results)} families:\n\n{table}"
+    return make_table_response(
+        title="Microbial Families",
+        columns=["family", "species_count", "total_genomes", "total_genes"],
+        rows=rows,
+        summary=f"Found {len(results)} families"
+    )
 
 
 @mcp.tool()
@@ -98,7 +113,7 @@ def query_species(
     if not results:
         return "No species found matching the criteria."
 
-    formatted = []
+    rows = []
     for org in results:
         gene_dist = org.get("gene_class_distribution", [0, 0, 0])
         if isinstance(gene_dist, list) and len(gene_dist) >= 3:
@@ -106,7 +121,7 @@ def query_species(
         else:
             core, shell, cloud = 0, 0, 0
 
-        formatted.append({
+        rows.append({
             "species": org.get("species"),
             "family": org.get("family"),
             "genomes": org.get("genomes_num", 0),
@@ -117,10 +132,12 @@ def query_species(
             "openness": org.get("openness", "N/A")
         })
 
-    df = pd.DataFrame(formatted)
-    table = df.to_markdown(index=False)
-
-    return f"Found {len(results)} species:\n\n{table}"
+    return make_table_response(
+        title="Species (Pangenome Analyses)",
+        columns=["species", "family", "genomes", "genes", "core", "shell", "cloud", "openness"],
+        rows=rows,
+        summary=f"Found {len(results)} species"
+    )
 
 
 @mcp.tool()
@@ -178,11 +195,11 @@ def query_genomes(
     if not results:
         return "No genomes found matching the criteria."
 
-    formatted = []
+    rows = []
     for doc in results:
         isolation = doc.get("isolation", {})
 
-        formatted.append({
+        rows.append({
             "genome_id": doc.get("genome_id"),
             "species": doc.get("species"),
             "strain": doc.get("strain", "N/A"),
@@ -193,10 +210,12 @@ def query_genomes(
             "isolation_source": isolation.get("isolation_source", "N/A")
         })
 
-    df = pd.DataFrame(formatted)
-    table = df.to_markdown(index=False)
-
-    return f"Found {len(results)} genomes:\n\n{table}"
+    return make_table_response(
+        title="Genomes",
+        columns=["genome_id", "species", "strain", "gc_content", "genome_len", "phylo_group", "country", "isolation_source"],
+        rows=rows,
+        summary=f"Found {len(results)} genomes"
+    )
 
 
 @mcp.tool()
@@ -239,10 +258,10 @@ def query_genes(
     if not results:
         return "No genes found matching the criteria."
 
-    formatted = []
+    rows = []
     for gene in results:
         protein = gene.get("protein", "N/A")
-        formatted.append({
+        rows.append({
             "gene": gene.get("gene"),
             "species": gene.get("species"),
             "protein": protein[:50] + "..." if len(protein) > 50 else protein,
@@ -252,10 +271,12 @@ def query_genes(
             "cog_name": gene.get("cog_name", "N/A")
         })
 
-    df = pd.DataFrame(formatted)
-    table = df.to_markdown(index=False)
-
-    return f"Found {len(results)} genes:\n\n{table}"
+    return make_table_response(
+        title="Genes",
+        columns=["gene", "species", "protein", "pangenomic_class", "frequency", "cog_category", "cog_name"],
+        rows=rows,
+        summary=f"Found {len(results)} genes"
+    )
 
 
 @mcp.tool()
@@ -285,10 +306,15 @@ def query_pathways(
     if not results:
         return "No pathways found matching the criteria."
 
-    df = pd.DataFrame(results)
-    table = df.to_markdown(index=False)
+    # Get column names from first result
+    columns = list(results[0].keys()) if results else []
 
-    return f"Found {len(results)} pathways:\n\n{table}"
+    return make_table_response(
+        title="KEGG Pathways",
+        columns=columns,
+        rows=results,
+        summary=f"Found {len(results)} pathways"
+    )
 
 
 @mcp.tool()
@@ -315,27 +341,14 @@ def query_stats(stat_type: str = "summary") -> str:
         if isinstance(dimensions, str):
             dimensions = json.loads(dimensions)
 
-        result = f"PanKB Database Statistics (as of {date_str}):\n\n"
-        result += "## Overall Dimensions\n"
-        for key, value in dimensions.items():
-            result += f"- {key}: {value:,}\n"
+        rows = [{"metric": k, "value": v} for k, v in dimensions.items()]
 
-        genome_counts = latest.get("organism_genome_count", "{}")
-        gene_counts = latest.get("organism_gene_count", "{}")
-        if isinstance(genome_counts, str):
-            genome_counts = json.loads(genome_counts)
-        if isinstance(gene_counts, str):
-            gene_counts = json.loads(gene_counts)
-
-        if genome_counts:
-            result += f"\n## Top Families by Genome Count\n"
-            df = pd.DataFrame([
-                {"family": k, "genomes": genome_counts[k], "genes": gene_counts.get(k, 0)}
-                for k in sorted(genome_counts.keys(), key=lambda x: genome_counts[x], reverse=True)[:10]
-            ])
-            result += df.to_markdown(index=False)
-
-        return result
+        return make_table_response(
+            title=f"PanKB Database Dimensions ({date_str})",
+            columns=["metric", "value"],
+            rows=rows,
+            summary=f"Overall database statistics as of {date_str}"
+        )
 
     elif stat_type == "by_family":
         genome_counts = latest.get("organism_genome_count", "{}")
@@ -346,27 +359,33 @@ def query_stats(stat_type: str = "summary") -> str:
         if isinstance(gene_counts, str):
             gene_counts = json.loads(gene_counts)
 
-        df = pd.DataFrame([
+        rows = [
             {"family": k, "genomes": genome_counts[k], "genes": gene_counts.get(k, 0)}
             for k in sorted(genome_counts.keys(), key=lambda x: genome_counts[x], reverse=True)
-        ])
+        ]
 
-        result = f"PanKB Statistics by Family (as of {date_str}):\n\n"
-        result += df.to_markdown(index=False)
-        return result
+        return make_table_response(
+            title=f"PanKB Statistics by Family ({date_str})",
+            columns=["family", "genomes", "genes"],
+            rows=rows,
+            summary=f"Found {len(rows)} families"
+        )
 
     elif stat_type == "by_country":
         country_stats = latest.get("country_strain_count", "{}")
         if isinstance(country_stats, str):
             country_stats = json.loads(country_stats)
 
-        df = pd.DataFrame([
+        rows = [
             {"country": k.upper(), "strain_count": v}
-            for k, v in sorted(country_stats.items(), key=lambda x: x[1], reverse=True)[:20]
-        ])
+            for k, v in sorted(country_stats.items(), key=lambda x: x[1], reverse=True)
+        ]
 
-        result = f"PanKB Geographic Distribution (as of {date_str}):\n\n"
-        result += df.to_markdown(index=False)
-        return result
+        return make_table_response(
+            title=f"PanKB Geographic Distribution ({date_str})",
+            columns=["country", "strain_count"],
+            rows=rows,
+            summary=f"Found {len(rows)} countries"
+        )
 
     return f"Unknown stat_type: {stat_type}. Use 'summary', 'by_family', or 'by_country'."

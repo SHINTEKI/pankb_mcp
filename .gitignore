@@ -17,5 +17,12 @@ logs
 tree.txt
 llm.txt
 
+# Jupyter notebooks and practice files
+playground/
+**/*.ipynb
+
 # PostgreSQL data directory
 sqldb/data/
+
+# Secrets
+ai_client/app/.streamlit

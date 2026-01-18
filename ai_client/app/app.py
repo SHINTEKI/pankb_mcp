@@ -2,51 +2,23 @@
 Streamlit Chat App with MCP Tools
 """
 import os
-import re
-import base64
+import uuid
 import asyncio
 import streamlit as st
-from mcp_client import MCPClient
+from mcp_client_stream import MCPClient, AgentEvent
+from fastmcp.client.auth import BearerAuth
 from dotenv import load_dotenv
+from db import get_or_create_user, save_chat_message
+from render import render_tool_call, render_tool_request, render_tool_response
 
 load_dotenv()
 
-
-def render_content(content: str):
-    """Render content, handling base64 images"""
-    # Pattern to match base64 image data
-    pattern = r'data:image/(png|jpeg|jpg|gif);base64,([A-Za-z0-9+/=]+)'
-
-    parts = re.split(pattern, content)
-
-    i = 0
-    while i < len(parts):
-        part = parts[i]
-
-        # Check if this is an image format indicator (png, jpeg, etc.)
-        if i + 2 < len(parts) and parts[i + 1] in ['png', 'jpeg', 'jpg', 'gif']:
-            # Render any text before the image
-            if part.strip():
-                st.markdown(part)
-
-            # Render the image
-            img_format = parts[i + 1]
-            img_data = parts[i + 2]
-            try:
-                st.image(base64.b64decode(img_data), use_container_width=True)
-            except Exception:
-                st.markdown(f"[Image decode error]")
-
-            i += 3
-        else:
-            # Regular text
-            if part.strip():
-                st.markdown(part)
-            i += 1
-
-# Configuration (read from environment variables)
-MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://localhost:8000/mcp")
-MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+# Configuration
+MCP_SERVER_URL = os.getenv("MCP_SERVER_URL")
+MCP_API_KEY = os.getenv("MCP_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+MODEL = os.getenv("OPENAI_MODEL")
+SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT")
 
 # Page configuration
 st.set_page_config(
@@ -55,8 +27,36 @@ st.set_page_config(
     layout="wide"
 )
 
+# OpenID Connect 
+if not st.user.is_logged_in:
+    st.title("🧬 PanKB AI Assistant")
+    st.markdown("Please log in to enjoy better service.")
+    st.button("Log in with Google", on_click=st.login, args=["google"])
+    st.stop()
 
-# Initialize session state
+# User database setup; implement when user logs in 
+if "db_user" not in st.session_state:
+    try:
+        st.session_state.db_user = get_or_create_user(
+            oauth_provider="google",
+            email=st.user.email,
+            display_name=st.user.name,
+            avatar_url=getattr(st.user, 'picture', None)
+        )
+    except Exception as e:
+        st.error(f"Database connection error: {str(e)}")
+        st.session_state.db_user = None
+
+if "conversation_id" not in st.session_state:
+    st.session_state.conversation_id = str(uuid.uuid4())
+
+# Sidebar
+with st.sidebar:
+    st.markdown(f"**Welcome, {st.user.name}!**")
+    st.caption(f"Email: {st.user.email}")
+    st.button("Log out", on_click=st.logout)
+
+# Initialize session state with messages and MCP client
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -64,19 +64,22 @@ if "client" not in st.session_state:
     st.session_state.client = None
     st.session_state.connected = False
 
-
 async def init_client():
-    """Initialize MCP Client"""
-    client = MCPClient(mcp_server_url=MCP_SERVER_URL, model=MODEL)
+    """Initialize and connect MCP client"""
+    client = MCPClient(
+        mcp_server_url=MCP_SERVER_URL,
+        openai_api_key=OPENAI_API_KEY,
+        model=MODEL,
+        auth=BearerAuth(token=MCP_API_KEY),
+        system_prompt=SYSTEM_PROMPT
+    )
     await client.connect()
     return client
 
-
 # Main interface
 st.title("🧬 PanKB AI Assistant")
-# st.caption("Pangenomic data and literacture intelligent assistant based on MCP protocol")
 
-# Connect to MCP Server (auto-reconnect)
+# Connect to MCP Server
 if not st.session_state.connected:
     try:
         st.session_state.client = asyncio.run(init_client())
@@ -86,15 +89,13 @@ if not st.session_state.connected:
         st.error(f"Failed to connect to MCP Server: {str(e)}")
         st.stop()
 
-# Display welcome message and hints when no conversation yet
+# Welcome message
 if not st.session_state.messages:
-    st.markdown("I can help you explore pangenomic data. Here are the available tools:")
-
+    st.markdown("I can help you explore PanKB's pangenomic data. Here are the available tools:")
     col1, col2 = st.columns(2)
-
     with col1:
         st.markdown("""
-**� Query Tools**
+**🔍 Query Tools**
 | Tool | Description |
 |------|-------------|
 | `query_families` | List microbial families |
@@ -104,7 +105,6 @@ if not st.session_state.messages:
 | `query_pathways` | Search KEGG pathways |
 | `query_stats` | Database statistics |
         """)
-
     with col2:
         st.markdown("""
 **📈 Visualization Tools**
@@ -129,36 +129,101 @@ if not st.session_state.messages:
 # Display conversation history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
-        render_content(message["content"])
+        for tc in message.get("tool_calls", []):
+            render_tool_call(
+                name=tc["name"],
+                arguments=tc["arguments"],
+                result=tc["result"],
+                result_type=tc.get("result_type"),
+                parsed_data=tc.get("parsed_data")
+            )
+        if message["content"]:
+            st.markdown(message["content"])
 
-# Streaming response function
-async def stream_response(client, user_prompt, placeholder):
-    """Get AI response via streaming"""
-    full_response = ""
-    async for chunk in client.chat_stream(user_prompt):
-        full_response += chunk
-        # During streaming, just show text (images will render after complete)
-        placeholder.markdown(full_response + "▌")
-    return full_response
+# Process chat with streaming updates
+async def process_chat(client: MCPClient, user_prompt: str, text_placeholder, tool_container):
+    """Process chat and update UI. Returns (llm_text, tool_calls)"""
+    llm_text = ""
+    tool_calls = []
+
+    async for event in client.chat(user_prompt):
+        if event.type == "tool_start":
+            with tool_container:
+                render_tool_request(event.tool_name, event.tool_args)
+
+        elif event.type == "tool_result":
+            tool_calls.append({
+                "name": event.tool_name,
+                "arguments": event.tool_args,
+                "result": event.content,
+                "result_type": event.result_type,
+                "parsed_data": event.parsed_data
+            })
+            with tool_container:
+                render_tool_response(
+                    name=event.tool_name,
+                    result=event.content,
+                    result_type=event.result_type,
+                    parsed_data=event.parsed_data
+                )
+
+        elif event.type == "text":
+            llm_text += event.content
+            text_placeholder.markdown(llm_text + "▌")
+
+    return llm_text, tool_calls
 
 
 # User input
 if prompt := st.chat_input("What species are in PanKB?"):
-    # Display user message
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    st.session_state.messages.append({"role": "user", "content": prompt, "tool_calls": []})
     with st.chat_message("user"):
         st.markdown(prompt)
 
+    # Save user message
+    if st.session_state.db_user:
+        try:
+            save_chat_message(
+                user_id=st.session_state.db_user["id"],
+                role="user",
+                content=prompt,
+                conversation_id=st.session_state.conversation_id
+            )
+        except Exception:
+            pass
+
     # Get AI response
     with st.chat_message("assistant"):
-        response_placeholder = st.empty()
-        full_response = asyncio.run(
-            stream_response(st.session_state.client, prompt, response_placeholder)
-        )
-        # Clear placeholder and render with images
-        response_placeholder.empty()
-        render_content(full_response)
-        st.session_state.messages.append({"role": "assistant", "content": full_response})
+        tool_container = st.container()
+        text_placeholder = st.empty()
 
-    # Rerun to refresh page (hide welcome message, scroll to bottom)
+        llm_text, tool_calls = asyncio.run(
+            process_chat(
+                st.session_state.client,
+                prompt,
+                text_placeholder,
+                tool_container
+            )
+        )
+
+        text_placeholder.markdown(llm_text)
+
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": llm_text,
+            "tool_calls": tool_calls
+        })
+
+        # Save to database
+        if st.session_state.db_user:
+            try:
+                save_chat_message(
+                    user_id=st.session_state.db_user["id"],
+                    role="assistant",
+                    content=llm_text,
+                    conversation_id=st.session_state.conversation_id
+                )
+            except Exception:
+                pass
+
     st.rerun()
