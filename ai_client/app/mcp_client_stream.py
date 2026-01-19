@@ -3,8 +3,9 @@ MCP Client: Connect to MCP Server, convert tools to OpenAI function calling form
 (Streaming version)
 """
 import json
-from typing import AsyncGenerator
 from dataclasses import dataclass
+from typing import AsyncGenerator
+
 from fastmcp import Client
 from openai import AsyncOpenAI
 
@@ -56,6 +57,15 @@ class MCPClient:
         else:
             self.messages = []
 
+    def _trim_messages(self, max_messages: int = 40):
+        """Keep system prompt + most recent messages to avoid context overflow"""
+        if len(self.messages) <= max_messages:
+            return
+
+        system_msg = self.messages[0] if self.messages[0]["role"] == "system" else None
+        recent = self.messages[-max_messages:]
+        self.messages = [system_msg] + recent if system_msg else recent
+
     async def connect(self):
         """Connect to MCP Server and fetch tools"""
         async with self._create_mcp_client() as client:
@@ -102,6 +112,7 @@ class MCPClient:
             AgentEvent(type="tool_result") - tool finished with result
             AgentEvent(type="text") - streaming text chunk (one per chunk)
         """
+        self._trim_messages()  
         self.messages.append({"role": "user", "content": user_message})
 
         while True:
