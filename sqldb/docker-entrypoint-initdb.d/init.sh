@@ -56,6 +56,21 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     ON chat_messages (user_id, created_at);
 
 
+
+    CREATE TABLE conversations (
+        id              BIGSERIAL PRIMARY KEY,
+        user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        conversation_id UUID UNIQUE NOT NULL,
+        title           TEXT,
+        messages        JSONB NOT NULL DEFAULT '[]',
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX idx_conversations_user_id ON conversations(user_id);
+    CREATE INDEX idx_conversations_updated_at ON conversations(updated_at DESC);
+
+
     GRANT SELECT, INSERT, UPDATE, DELETE
     ON ALL TABLES IN SCHEMA public
     TO sql_user;

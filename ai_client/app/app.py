@@ -2,13 +2,14 @@
 Streamlit Chat App with MCP Tools
 """
 import os
+import json
 import uuid
 import asyncio
 import streamlit as st
 from mcp_client_stream import MCPClient, AgentEvent
 from fastmcp.client.auth import BearerAuth
 from dotenv import load_dotenv
-from db import get_or_create_user, save_chat_message
+from db import get_or_create_user, save_conversation, get_conversation, get_user_conversations
 from render import render_tool_call, render_tool_request, render_tool_response
 
 load_dotenv()
@@ -47,19 +48,7 @@ if "db_user" not in st.session_state:
         st.error(f"Database connection error: {str(e)}")
         st.session_state.db_user = None
 
-if "conversation_id" not in st.session_state:
-    st.session_state.conversation_id = str(uuid.uuid4())
-
-# Sidebar
-with st.sidebar:
-    st.markdown(f"**Welcome, {st.user.name}!**")
-    st.caption(f"Email: {st.user.email}")
-    st.button("Log out", on_click=st.logout)
-
-# Initialize session state with messages and MCP client
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
+# Initialize session state with MCP client
 if "client" not in st.session_state:
     st.session_state.client = None
     st.session_state.connected = False
@@ -75,10 +64,7 @@ async def init_client():
     )
     await client.connect()
     return client
-
-# Main interface
-st.title("🧬 PanKB AI Assistant")
-
+    
 # Connect to MCP Server
 if not st.session_state.connected:
     try:
@@ -89,8 +75,58 @@ if not st.session_state.connected:
         st.error(f"Failed to connect to MCP Server: {str(e)}")
         st.stop()
 
-# Welcome message
-if not st.session_state.messages:
+if "conversation_id" not in st.session_state:
+    st.session_state.conversation_id = str(uuid.uuid4())
+    
+# Main interface
+st.title("🧬 PanKB AI Assistant")
+     
+# Sidebar
+with st.sidebar:
+    st.markdown(f"**Welcome, {st.user.name}!**")
+    st.caption(f"Email: {st.user.email}")
+    st.button("Log out", on_click=st.logout)
+
+    st.divider()
+
+    # New chat button
+    if st.button("+ New Chat", use_container_width=True):
+        st.session_state.conversation_id = str(uuid.uuid4())
+        st.session_state.client.clear_history() # 看这一页会怎么重新渲染
+        st.rerun()
+
+    # Conversation history list
+    if st.session_state.db_user: # Could be None if DB connection error
+        conversations = get_user_conversations(st.session_state.db_user["id"], limit=10)
+        if conversations:
+            st.markdown("**Recent Chats**")
+            for conv in conversations:
+                conv_id = str(conv["conversation_id"])
+                title = conv["title"] or "Untitled"
+                is_current = conv_id == st.session_state.conversation_id
+
+                if st.button(
+                    f"{'▶ ' if is_current else ''}{title}",
+                    key=f"conv_{conv_id}",
+                    use_container_width=True,
+                    disabled=is_current
+                ):
+                    # Switch to this conversation
+                    st.session_state.conversation_id = conv_id
+                    # Load conversation messages into client
+                    conv_data = get_conversation(conv_id)
+                    if conv_data and st.session_state.client: 
+                        st.session_state.client.messages = conv_data["messages"]
+                    st.rerun()
+
+# Helper: check if conversation has started
+def has_conversation():
+    if not st.session_state.client:
+        return False
+    return any(m["role"] == "user" for m in st.session_state.client.messages)
+
+# Welcome message (only show if no conversation yet)
+if not has_conversation():
     st.markdown("I can help you explore PanKB's pangenomic data. Here are the available tools:")
     col1, col2 = st.columns(2)
     with col1:
@@ -126,19 +162,68 @@ if not st.session_state.messages:
 
     st.markdown("---")
 
-# Display conversation history
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        for tc in message.get("tool_calls", []):
-            render_tool_call(
-                name=tc["name"],
-                arguments=tc["arguments"],
-                result=tc["result"],
-                result_type=tc.get("result_type"),
-                parsed_data=tc.get("parsed_data")
-            )
-        if message["content"]:
-            st.markdown(message["content"])
+# Display conversation history from client.messages
+def render_conversation_history():
+    """Render conversation from client.messages"""
+    messages = st.session_state.client.messages
+    i = 0
+    while i < len(messages):
+        msg = messages[i]
+
+        if msg["role"] == "system":
+            i += 1
+
+        elif msg["role"] == "user":
+            with st.chat_message("user"):
+                st.markdown(msg["content"])
+            i += 1
+
+        elif msg["role"] == "tool":
+            # Skip - already rendered with assistant message
+            i += 1
+
+        elif msg["role"] == "assistant":
+            with st.chat_message("assistant"):
+                # If this assistant message has tool_calls, render them
+                if msg.get("tool_calls"):
+                    for tc in msg["tool_calls"]:
+                        tc_id = tc["id"]
+                        tc_name = tc["function"]["name"]
+                        tc_args = json.loads(tc["function"]["arguments"])
+
+                        # Find the corresponding tool result message
+                        for j in range(i + 1, len(messages)):
+                            tool_msg = messages[j]
+                            if tool_msg["role"] == "tool" and tool_msg.get("tool_call_id") == tc_id:
+                                render_tool_call(
+                                    name=tool_msg.get("tool_name", tc_name),
+                                    arguments=tc_args,
+                                    result=tool_msg["content"],
+                                    result_type=tool_msg.get("result_type"),
+                                    parsed_data=tool_msg.get("parsed_data")
+                                )
+                                break
+
+                # Render text content from this message
+                if msg.get("content"):
+                    st.markdown(msg["content"])
+
+                # Check if next non-tool message is an assistant with content (continuation)
+                # This handles the pattern: assistant(tool_calls) -> tool -> assistant(content)
+                j = i + 1
+                while j < len(messages) and messages[j]["role"] == "tool":
+                    j += 1
+                if j < len(messages) and messages[j]["role"] == "assistant":
+                    next_assistant = messages[j]
+                    # Only merge if: current has tool_calls, next has content but no tool_calls
+                    if msg.get("tool_calls") and next_assistant.get("content") and not next_assistant.get("tool_calls"):
+                        st.markdown(next_assistant["content"])
+                        i = j  # Skip to after the merged assistant message
+            i += 1
+
+
+
+render_conversation_history()
 
 # Process chat with streaming updates
 async def process_chat(client: MCPClient, user_prompt: str, text_placeholder, tool_container):
@@ -173,24 +258,11 @@ async def process_chat(client: MCPClient, user_prompt: str, text_placeholder, to
 
     return llm_text, tool_calls
 
-
 # User input
 if prompt := st.chat_input("What species are in PanKB?"):
-    st.session_state.messages.append({"role": "user", "content": prompt, "tool_calls": []})
+    # Display user message (client.chat will add it to client.messages)
     with st.chat_message("user"):
         st.markdown(prompt)
-
-    # Save user message
-    if st.session_state.db_user:
-        try:
-            save_chat_message(
-                user_id=st.session_state.db_user["id"],
-                role="user",
-                content=prompt,
-                conversation_id=st.session_state.conversation_id
-            )
-        except Exception:
-            pass
 
     # Get AI response
     with st.chat_message("assistant"):
@@ -208,22 +280,15 @@ if prompt := st.chat_input("What species are in PanKB?"):
 
         text_placeholder.markdown(llm_text)
 
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": llm_text,
-            "tool_calls": tool_calls
-        })
-
-        # Save to database
-        if st.session_state.db_user:
-            try:
-                save_chat_message(
-                    user_id=st.session_state.db_user["id"],
-                    role="assistant",
-                    content=llm_text,
-                    conversation_id=st.session_state.conversation_id
-                )
-            except Exception:
-                pass
+    # Save entire conversation to database
+    if st.session_state.db_user and st.session_state.client:
+        try:
+            save_conversation(
+                user_id=st.session_state.db_user["id"],
+                conversation_id=st.session_state.conversation_id,
+                messages=st.session_state.client.messages
+            )
+        except Exception:
+            pass
 
     st.rerun()

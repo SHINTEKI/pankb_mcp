@@ -48,6 +48,14 @@ class MCPClient:
     def _create_mcp_client(self) -> Client:
         return Client(self.mcp_server_url, auth=self.auth)
 
+    def clear_history(self, keep_system_prompt: bool = True):
+        """Clear conversation history, optionally keeping system prompt"""
+        if keep_system_prompt:
+            system_msg = next((m for m in self.messages if m["role"] == "system"), None)
+            self.messages = [system_msg] if system_msg else []
+        else:
+            self.messages = []
+
     async def connect(self):
         """Connect to MCP Server and fetch tools"""
         async with self._create_mcp_client() as client:
@@ -169,7 +177,12 @@ class MCPClient:
                     self.messages.append({
                         "role": "tool",
                         "tool_call_id": tc["id"],
-                        "content": result_str
+                        "content": result_str,
+                        # Extra fields for UI rendering (OpenAI ignores these)
+                        "tool_name": name,
+                        "tool_args": args,
+                        "result_type": result_type,
+                        "parsed_data": parsed_data
                     })
                 continue
 
