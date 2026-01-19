@@ -259,7 +259,7 @@ def render_table(table_data: dict):
 def render_tool_request(name: str, arguments: dict):
     """Render tool call request (arguments only)"""
     with st.expander(f"Request Tool Call from MCP Server: {name}", expanded=False):
-        st.json(arguments, key=f"json_request_{uuid.uuid4()}")
+        st.json(arguments)
 
 
 def render_tool_response(name: str, result: str, result_type: str | None, parsed_data: dict | None):
@@ -274,9 +274,9 @@ def render_tool_response(name: str, result: str, result_type: str | None, parsed
         with st.expander(f"Result: {name}", expanded=True):
             try:
                 parsed = json.loads(result)
-                st.json(parsed, key=f"json_response_{uuid.uuid4()}")
+                st.json(parsed)
             except json.JSONDecodeError:
-                st.code(result, language="text", key=f"code_{uuid.uuid4()}")
+                st.code(result, language="text")
 
 
 def render_tool_call(name: str, arguments: dict, result: str, result_type: str | None, parsed_data: dict | None):
