@@ -41,3 +41,7 @@ class Config:
     # Azure Blob Storage
     AZURE_BLOB_BASE_URL = os.getenv("AZURE_BLOB_BASE_URL")
 
+    # API Keys for RAG
+    VOYAGE_API_KEY = os.getenv("VOYAGE_API_KEY")
+    COHERE_API_KEY = os.getenv("COHERE_API_KEY")
+

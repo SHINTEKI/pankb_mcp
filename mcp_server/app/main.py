@@ -1,9 +1,10 @@
-import os
 import logging
+import os
+
+from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp.server.auth import StaticTokenVerifier
 from fastmcp.utilities.logging import configure_logging
-from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -21,14 +22,14 @@ logging.getLogger().addHandler(file_handler)
 for module in ['mcp', 'httpx', 'httpcore', 'matplotlib', 'pymongo', 'azure', 'fakeredis', 'docket']:
     logging.getLogger(module).setLevel(logging.WARNING)
 
+from app.prompts.templates import mcp as templates_mcp
+from app.resources.data import mcp as data_mcp
+from app.tools.analysis import mcp as analysis_mcp
+
 # Import mcp instances from each module
 from app.tools.chart import mcp as chart_mcp
-from app.tools.analysis import mcp as analysis_mcp
 from app.tools.query import mcp as query_mcp
-# from app.tools.rag import mcp as rag_mcp  # TODO: fix langchain imports
-from app.tools.azure_blob import mcp as azure_blob_mcp
-from app.resources.data import mcp as data_mcp
-from app.prompts.templates import mcp as templates_mcp
+from app.tools.rag import mcp as rag_mcp
 
 # Bearer Token authentication for internal service communication
 # MCP_API_KEY is used by the Streamlit client to authenticate
@@ -58,8 +59,7 @@ mcp = FastMCP(
 mcp.mount(chart_mcp)
 mcp.mount(analysis_mcp)
 mcp.mount(query_mcp)
-# mcp.mount(rag_mcp)  # TODO: fix langchain imports
-mcp.mount(azure_blob_mcp)
+mcp.mount(rag_mcp) 
 mcp.mount(data_mcp)
 mcp.mount(templates_mcp)
 

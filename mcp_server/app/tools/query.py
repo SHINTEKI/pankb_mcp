@@ -40,7 +40,7 @@ def query_families(family: Optional[str] = None) -> str:
     Args:
         family: Filter by family name (case-insensitive)
     """
-    collection = mongo_client.get_collection(Config.COLLECTIONS["organisms"])
+    collection = mongo_client.get_collection(Config.MONGODB_COLLECTIONS["organisms"])
 
     match_stage = {}
     if family:
@@ -98,7 +98,7 @@ def query_species(
         pangenome_analysis: Exact pangenome analysis name (e.g., 'Bacillus_subtilis')
         limit: Maximum number of results (default: 50)
     """
-    collection = mongo_client.get_collection(Config.COLLECTIONS["organisms"])
+    collection = mongo_client.get_collection(Config.MONGODB_COLLECTIONS["organisms"])
 
     query = {}
     if family:
@@ -159,7 +159,7 @@ def query_genomes(
         isolation_source: Filter by isolation source (e.g., 'Soil', 'Blood')
         limit: Maximum number of results (default: 100)
     """
-    collection = mongo_client.get_collection(Config.COLLECTIONS["genome_info"])
+    collection = mongo_client.get_collection(Config.MONGODB_COLLECTIONS["genome_info"])
 
     match_query = {}
     if pangenome_analysis:
@@ -171,7 +171,7 @@ def query_genomes(
         {"$match": match_query} if match_query else {"$match": {}},
         {
             "$lookup": {
-                "from": Config.COLLECTIONS["isolation_info"],
+                "from": Config.MONGODB_COLLECTIONS["isolation_info"],
                 "localField": "genome_id",
                 "foreignField": "genome_id",
                 "as": "isolation"
@@ -239,7 +239,7 @@ def query_genes(
         protein_search: Search in protein descriptions (case-insensitive)
         limit: Maximum number of results (default: 100)
     """
-    collection = mongo_client.get_collection(Config.COLLECTIONS["gene_annotations"])
+    collection = mongo_client.get_collection(Config.MONGODB_COLLECTIONS["gene_annotations"])
 
     query = {}
     if pangenome_analysis:
@@ -293,7 +293,7 @@ def query_pathways(
         pathway_name_search: Search pathway names (case-insensitive)
         limit: Maximum number of results (default: 50)
     """
-    collection = mongo_client.get_collection(Config.COLLECTIONS["pathway_info"])
+    collection = mongo_client.get_collection(Config.MONGODB_COLLECTIONS["pathway_info"])
 
     query = {}
     if pathway_ids:
@@ -327,7 +327,7 @@ def query_stats(stat_type: str = "summary") -> str:
         stat_type: Type of statistics - 'summary' for overall counts,
                   'by_family' for family distribution, 'by_country' for geographic distribution
     """
-    collection = mongo_client.get_collection(Config.COLLECTIONS["pankb_stats"])
+    collection = mongo_client.get_collection(Config.MONGODB_COLLECTIONS["pankb_stats"])
 
     latest = collection.find_one(sort=[("date", -1)])
 

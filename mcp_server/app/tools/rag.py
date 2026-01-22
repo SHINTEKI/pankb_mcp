@@ -1,142 +1,158 @@
-from fastmcp import FastMCP, Context
-from fastmcp.dependencies import CurrentContext
-import os
-import dotenv
+"""
+RAG (Retrieval-Augmented Generation) Tools for PanKB MCP Server
 
+Provides document retrieval from pangenomics literature.
+Returns documents only - answer generation is handled by the AI client.
+"""
+import json
+import logging
 
+from app.utils.connections import get_rag_client
+from fastmcp import FastMCP
+
+logger = logging.getLogger(__name__)
 
 mcp = FastMCP(name="RAGTools")
 
 
-
-from langchain.schema.runnable import RunnablePassthrough
-from langchain_core.prompts import ChatPromptTemplate
-from operator import itemgetter
-from langchain.schema.runnable import RunnableMap
-from langchain.retrievers.contextual_compression import ContextualCompressionRetriever
-from langchain_cohere import CohereRerank
-from langchain_community.vectorstores.azure_cosmos_db import AzureCosmosDBVectorSearch, CosmosDBSimilarityType, CosmosDBVectorSearchType
-from langchain_voyageai import VoyageAIEmbeddings
-from pymongo import MongoClient
-
-# Load environment variables and connect to MongoDB
-dotenv.load_dotenv()
-
-connection_string = os.getenv("MONGODB_VECTOR_CONN_STRING")
-db_name = "pankb_llm"
-collection_name = "pankb_vector_store"
-client = MongoClient(connection_string)
-collection = client[db_name][collection_name]
-
-
-def format_docs(docs):
-    return "\n\n".join('Title: ' + doc.metadata['title'] + '.' + ' Content: ' + doc.page_content for doc in docs)
-
-def filter_and_extract_documents(documents):
-    filtered_documents = [doc for doc in documents if doc.metadata['relevance_score'] >= 0.5]
-    return filtered_documents
-
-def get_retriever(db_name, collection_name):
-    # Important: here we can use only embedding models with dimensionality up to 2000,
-    # because for Azure Cosmos Db for MongoDB the maximum number of supported dimensions is 2000: ----
-    embeddings = VoyageAIEmbeddings(model="voyage-large-2-instruct", show_progress_bar=True)
-
-    namespace = db_name + '.' + collection_name
-    vectordb = AzureCosmosDBVectorSearch.from_connection_string(connection_string, namespace, embeddings)
-
-    retriever = vectordb.as_retriever(search_type="similarity", search_kwargs={"k": 30})
-
-    compressor = CohereRerank(top_n=20)
-    compression_retriever = ContextualCompressionRetriever(
-        base_compressor=compressor, base_retriever=retriever
+def _get_embedding(text: str) -> list[float]:
+    """Get embedding vector for text using VoyageAI"""
+    client = get_rag_client()
+    result = client.voyage.embed(
+        texts=[text],
+        model="voyage-large-2-instruct"
     )
-    return compression_retriever
+    return result.embeddings[0]
 
-def question_answer(retriever, question):
-    template = """You are PangenomeLLM. You are a cautious assistant proficient in microbial pangenomics. Use the following pieces of context to answer user's questions. 
-    Please check the information in the context carefully and do not use information that is not relevant to the question. 
-    If the retrieved context doesn't provide useful information to answer user's question, just say that you don't know. 
-    Question: {question}
-    Context: {context}
-    Answer:"""
 
-    prompt = ChatPromptTemplate.from_template(template)
-
-    llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0, model_kwargs={"top_p": 0.0})
-
-    rag_chain_from_docs = (
-            {
-                "context": lambda input: format_docs(input["documents"]),
-                "question": itemgetter("question"),
+def _vector_search(query_embedding: list[float], k: int = 30) -> list[dict]:
+    """Vector similarity search in MongoDB Cosmos DB"""
+    client = get_rag_client()
+    pipeline = [
+        {
+            "$search": {
+                "cosmosSearch": {
+                    "vector": query_embedding,
+                    "path": "vectorContent",
+                    "k": k
+                },
+                "returnStoredSource": True
             }
-            | prompt
-            | llm
+        },
+        {
+            "$project": {
+                "textContent": 1,
+                "source": 1,
+                "title": 1,
+                "score": {"$meta": "searchScore"}
+            }
+        }
+    ]
+    return list(client.collection.aggregate(pipeline))
+
+
+def _rerank_documents(query: str, documents: list[dict], top_n: int = 20) -> list[dict]:
+    """Rerank documents using Cohere Rerank"""
+    if not documents:
+        return []
+
+    client = get_rag_client()
+    doc_texts = [doc['textContent'] for doc in documents]
+
+    rerank_response = client.cohere.rerank(
+        model="rerank-english-v3.0",
+        query=query,
+        documents=doc_texts,
+        top_n=top_n
     )
 
-    rag_chain_with_source = RunnableMap(
-        {"documents": retriever, "question": RunnablePassthrough()}
-    ) | RunnableMap(
-        {"documents": lambda input: filter_and_extract_documents(input['documents']),
-         "question": lambda input: input["question"]}
-    ) | {
-                                "answer": rag_chain_from_docs,
-                                "Source": lambda input: [
-                                    {
-                                        'url': doc.metadata['source'],
-                                        'title': doc.metadata.get('title', 'Unknown Title')
-                                    }
-                                    for doc in input["documents"]
-                                ],
-                            }
-    response = rag_chain_with_source.invoke(question)
+    reranked_docs = []
+    for result in rerank_response.results:
+        doc = documents[result.index].copy()
+        doc['relevance_score'] = result.relevance_score
+        reranked_docs.append(doc)
 
-    answer = response['answer'].content + '<br>' + '<br>' + '<b>Reference:</b>' + '<br>'
-
-    # Generate links with paper titles instead of numbers
-    seen_urls = set()
-    unique_sources = []
-    for source in response['Source']:
-        if source['url'] not in seen_urls:
-            seen_urls.add(source['url'])
-            unique_sources.append(source)
-
-    links = [f'<a href="{source["url"]}">{source["title"]}</a>'
-             for source in unique_sources]
-
-    # Join the links into a single string separated by line breaks
-    formatted_links = '<br>'.join(links)
-
-    # Append the formatted links to the answer
-    answer += formatted_links
-
-    return answer
+    return reranked_docs
 
 
+def _filter_documents(documents: list[dict], threshold: float = 0.5) -> list[dict]:
+    """Filter documents below relevance threshold"""
+    return [doc for doc in documents if doc.get('relevance_score', 0) >= threshold]
 
-    retriever = get_retriever(db_name, collection_name)
 
-    # Initialize session state for holding messages if it does not exist
-    if 'messages' not in st.session_state:
-        st.session_state.messages = []
+def _search_documents(query: str, top_k: int = 5) -> list[dict]:
+    """
+    Complete RAG retrieval pipeline:
+    1. Embed query
+    2. Vector search (k=30)
+    3. Rerank (top_n=20)
+    4. Filter by relevance (threshold=0.5)
+    5. Return top_k documents
+    """
+    query_embedding = _get_embedding(query)
+    initial_docs = _vector_search(query_embedding, k=30)
+    reranked_docs = _rerank_documents(query, initial_docs, top_n=20)
+    filtered_docs = _filter_documents(reranked_docs, threshold=0.5)
+    return filtered_docs[:top_k]
 
-    # Display old messages
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"], unsafe_allow_html=True)
 
-    # Handle new input from the user
-    if prompt := st.chat_input("What is your question about microbial pangenomics?"):
-        # Add user's question to the session state
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+def _format_as_markdown(docs: list[dict]) -> str:
+    """Format documents as markdown for display"""
+    results = []
+    for i, doc in enumerate(docs, 1):
+        title = doc.get('title', 'Unknown')
+        source = doc.get('source', '')
+        content = doc.get('textContent', '')
 
-        with st.spinner('Generating answer...'):
-            answer = question_answer(retriever, prompt)
+        results.append(
+            f"### Document {i}: {title}\n\n"
+            f"**Source:** {source}\n\n"
+            f"{content}\n"
+        )
 
-        # Add the assistant's response to the session state
-        st.session_state.messages.append({"role": "assistant", "content": answer})
+    return "\n\n---\n".join(results)
 
-        # Display the assistant's response immediately
-        with st.chat_message("assistant"):
-            st.markdown(answer, unsafe_allow_html=True)
+
+@mcp.tool()
+def search_pangenome_literature(query: str, top_k: int = 5) -> str:
+    """
+    Search PanKB's scientific knowledge base about microbial pangenomics.
+
+    IMPORTANT: You MUST use this tool for ANY question about pangenomics concepts,
+    theory, methodology, or scientific background. This includes questions like:
+    - "What is X?" (core genome, accessory genome, pangenome, etc.)
+    - "Why is X important?" (pangenome analysis, comparative genomics, etc.)
+    - "How does X work?" (gene frequency, openness calculation, etc.)
+    - "What are the applications of X?"
+    - Any conceptual or educational questions about microbial genomics
+
+    Do NOT answer these questions from your own knowledge - always search first.
+    Base your answer ONLY on the returned documents.
+
+    Args:
+        query: Search query (e.g., "why is pangenome analysis important", "what is core genome")
+        top_k: Number of documents to return (default: 5)
+
+    Returns:
+        Relevant scientific documents with title, content, and source URL
+    """
+    try:
+        docs = _search_documents(query, top_k=top_k)
+
+        if not docs:
+            return "No relevant documents found. Please tell the user you don't have information about this topic."
+
+        markdown_content = _format_as_markdown(docs)
+
+        # Return as JSON with type "string" so client can parse and render markdown
+        return json.dumps({
+            "type": "string",
+            "format": "markdown",
+            "content": markdown_content
+        })
+
+    except ValueError as e:
+        return f"RAG not configured: {str(e)}"
+    except Exception as e:
+        logger.error(f"Literature search failed: {e}")
+        return f"Error searching literature: {str(e)}"

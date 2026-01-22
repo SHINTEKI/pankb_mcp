@@ -1,13 +1,16 @@
 """
-Database Connection Utilities for PanKB MCP Server
+Connection Utilities for PanKB MCP Server
 """
+import gzip
+import json
 import logging
 from typing import Optional
-from pymongo import MongoClient
-from pymongo.database import Database
-from pymongo.collection import Collection
 
+import requests
 from app.config import Config
+from pymongo import MongoClient
+from pymongo.collection import Collection
+from pymongo.database import Database
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +34,12 @@ class MongoDBClient:
     def _connect(self):
         """Establish MongoDB connection to PanKB data"""
         try:
-            uri = Config.get_pankb_mongodb_uri()
-            self._client = MongoClient(uri)
-            self._db = self._client[Config.MONGODB_DB_NAME]
-            # Test connection
-            self._client.server_info()
-            logger.info(f"Connected to PanKB MongoDB: {Config.MONGODB_DB_NAME}")
+            if not Config.MONGODB_URI:
+                raise ValueError("MONGODB_PANKB_CONN_STRING not configured")
+            self._client = MongoClient(Config.MONGODB_URI)
+            self._db = self._client[Config.MONGODB_NAME]
+            self._client.server_info()  # Test connection
+            logger.info(f"Connected to PanKB MongoDB: {Config.MONGODB_NAME}")
         except Exception as e:
             logger.error(f"Failed to connect to PanKB MongoDB: {e}")
             raise
@@ -59,5 +62,110 @@ class MongoDBClient:
             logger.info("MongoDB connection closed")
 
 
-# Singleton instance
 mongo_client = MongoDBClient()
+
+
+class BlobClient:
+    """Azure Blob Storage Client"""
+
+    @staticmethod
+    def _build_url(species: str, filename: str) -> str:
+        return f"{Config.AZURE_BLOB_BASE_URL}species/{species}/{filename}"
+
+    @classmethod
+    def fetch_json(cls, species: str, filename: str, timeout: int = 30) -> dict:
+        """Fetch JSON data from Azure Blob Storage"""
+        url = cls._build_url(species, filename)
+        response = requests.get(url, timeout=timeout)
+        response.raise_for_status()
+        return response.json()
+
+    @classmethod
+    def fetch_gzip_json(cls, species: str, filename: str, timeout: int = 60) -> dict:
+        """Fetch gzipped JSON data from Azure Blob Storage"""
+        url = cls._build_url(species, filename)
+        response = requests.get(url, timeout=timeout)
+        response.raise_for_status()
+        decompressed = gzip.decompress(response.content)
+        return json.loads(decompressed.decode('utf-8'))
+
+    @classmethod
+    def fetch_text(cls, species: str, filename: str, timeout: int = 30) -> str:
+        """Fetch text data from Azure Blob Storage"""
+        url = cls._build_url(species, filename)
+        response = requests.get(url, timeout=timeout)
+        response.raise_for_status()
+        return response.text
+
+
+blob_client = BlobClient()
+
+
+class RAGClient:
+    """
+    RAG Client - provides API clients for vector search.
+    Lazy initialization: only connects when first accessed.
+    Imports cohere/voyageai only when needed to avoid startup errors.
+    """
+
+    _instance: Optional['RAGClient'] = None
+    _initialized: bool = False
+
+    # API clients (typed as Any to avoid import at module level)
+    _voyage_client = None
+    _cohere_client = None
+    _collection: Optional[Collection] = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def _ensure_initialized(self):
+        """Initialize clients on first use (lazy loading)"""
+        if self._initialized:
+            return
+
+        # Lazy import to avoid ModuleNotFoundError at server startup
+        import cohere
+        import voyageai
+
+        if not Config.VECTOR_DB_URI:
+            raise ValueError("MONGODB_VECTOR_CONN_STRING not configured")
+        if not Config.VOYAGE_API_KEY:
+            raise ValueError("VOYAGE_API_KEY not configured")
+        if not Config.COHERE_API_KEY:
+            raise ValueError("COHERE_API_KEY not configured")
+
+        self._voyage_client = voyageai.Client(api_key=Config.VOYAGE_API_KEY)
+        self._cohere_client = cohere.Client(api_key=Config.COHERE_API_KEY)
+
+        client = MongoClient(Config.VECTOR_DB_URI)
+        db = client[Config.VECTOR_DB_NAME]
+        self._collection = db[Config.VECTOR_COLLECTION]
+
+        self._initialized = True
+        logger.info(f"RAG client initialized: {Config.VECTOR_DB_NAME}.{Config.VECTOR_COLLECTION}")
+
+    @property
+    def voyage(self):
+        """VoyageAI client for embeddings"""
+        self._ensure_initialized()
+        return self._voyage_client
+
+    @property
+    def cohere(self):
+        """Cohere client for reranking"""
+        self._ensure_initialized()
+        return self._cohere_client
+
+    @property
+    def collection(self) -> Collection:
+        """MongoDB collection for vector search"""
+        self._ensure_initialized()
+        return self._collection
+
+
+def get_rag_client() -> RAGClient:
+    """Get RAG client singleton (lazy initialization)"""
+    return RAGClient()

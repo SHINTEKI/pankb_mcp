@@ -20,6 +20,7 @@ llm.txt
 # Jupyter notebooks and practice files
 playground/
 **/*.ipynb
+**/*test.py
 
 # PostgreSQL data directory
 sqldb/data/

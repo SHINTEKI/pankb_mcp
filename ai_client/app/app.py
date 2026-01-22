@@ -1,15 +1,21 @@
 """
 Streamlit Chat App with MCP Tools
 """
-import os
-import json
-import uuid
 import asyncio
+import json
+import os
+import uuid
+
 import streamlit as st
-from mcp_client_stream import MCPClient, AgentEvent
-from fastmcp.client.auth import BearerAuth
+from db import (
+    get_conversation,
+    get_or_create_user,
+    get_user_conversations,
+    save_conversation,
+)
 from dotenv import load_dotenv
-from db import get_or_create_user, save_conversation, get_conversation, get_user_conversations
+from fastmcp.client.auth import BearerAuth
+from mcp_client_stream import AgentEvent, MCPClient
 from render import render_tool_call, render_tool_request, render_tool_response
 
 load_dotenv()
@@ -86,6 +92,7 @@ with st.sidebar:
     st.markdown(f"**Welcome, {st.user.name}!**")
     st.caption(f"Email: {st.user.email}")
     st.button("Log out", on_click=st.logout)
+    st.toggle("📚 Search Literature", key="literature_mode", help="Answer questions based on pangenome research papers")
 
     st.divider()
 
@@ -258,11 +265,16 @@ async def process_chat(client: MCPClient, user_prompt: str, text_placeholder, to
 
     return llm_text, tool_calls
 
+
 # User input
 if prompt := st.chat_input("What species are in PanKB?"):
-    # Display user message (client.chat will add it to client.messages)
+    display_prompt = prompt  # What user sees
+    if st.session_state.get("literature_mode", False):
+        user_prompt = f"Please use the search_pangenome_literature tool to answer my question: {prompt}"  
+
+    # Display user message 
     with st.chat_message("user"):
-        st.markdown(prompt)
+        st.markdown(display_prompt)
 
     # Get AI response
     with st.chat_message("assistant"):
@@ -272,7 +284,7 @@ if prompt := st.chat_input("What species are in PanKB?"):
         llm_text, tool_calls = asyncio.run(
             process_chat(
                 st.session_state.client,
-                prompt,
+                user_prompt,
                 text_placeholder,
                 tool_container
             )

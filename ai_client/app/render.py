@@ -3,9 +3,10 @@ Rendering functions for Streamlit UI components
 """
 import json
 import uuid
+
 import pandas as pd
-import streamlit as st
 import plotly.graph_objects as go
+import streamlit as st
 
 
 def _render_download_buttons(fig: go.Figure, title: str, data: dict):
@@ -270,6 +271,14 @@ def render_tool_response(name: str, result: str, result_type: str | None, parsed
     elif result_type == "table" and parsed_data:
         with st.expander(f"Result: {name}", expanded=True):
             render_table(parsed_data)
+    elif result_type == "string" and parsed_data:
+        # Handle string type - check for markdown format
+        with st.expander(f"Result: {name}", expanded=False):
+            content = parsed_data.get("content", "")
+            if parsed_data.get("format") == "markdown":
+                st.markdown(content)
+            else:
+                st.text(content)
     else:
         with st.expander(f"Result: {name}", expanded=True):
             try:

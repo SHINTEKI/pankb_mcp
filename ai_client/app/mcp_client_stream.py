@@ -57,14 +57,14 @@ class MCPClient:
         else:
             self.messages = []
 
-    def _trim_messages(self, max_messages: int = 40):
-        """Keep system prompt + most recent messages to avoid context overflow"""
-        if len(self.messages) <= max_messages:
-            return
-
-        system_msg = self.messages[0] if self.messages[0]["role"] == "system" else None
-        recent = self.messages[-max_messages:]
-        self.messages = [system_msg] + recent if system_msg else recent
+    # def _trim_messages(self, max_messages: int = 40):
+    #     """Keep system prompt + most recent messages to avoid context overflow"""
+    #     if len(self.messages) <= max_messages:
+    #         return
+    #
+    #     system_msg = self.messages[0] if self.messages[0]["role"] == "system" else None
+    #     recent = self.messages[-max_messages:]
+    #     self.messages = [system_msg] + recent if system_msg else recent
 
     async def connect(self):
         """Connect to MCP Server and fetch tools"""
@@ -92,16 +92,37 @@ class MCPClient:
             pass
         return None, None
 
-    async def _call_tool(self, name: str, args: dict) -> tuple[str, str | None, dict | None]:
-        """Call MCP tool and return (result_str, result_type, parsed_data)"""
+    async def _call_tool(self, name: str, args: dict) -> tuple[str, str | None, dict | None, str | None]:
+        """
+        Call MCP tool and return (result_str, result_type, parsed_data, image_base64)
+
+        Handles MCP standard format where tool may return multiple content blocks:
+        - ImageContent: base64 image for AI understanding
+        - TextContent: JSON data for rendering
+        """
         try:
             async with self._create_mcp_client() as client:
                 result = await client.call_tool(name, args)
-                result_str = result.content[0].text if result.content else ""
-                result_type, parsed_data = self._parse_result(result_str)
-                return result_str, result_type, parsed_data
+
+                result_str = ""
+                image_base64 = None
+                result_type = None
+                parsed_data = None
+
+                # Process all content blocks
+                for content in result.content:
+                    if hasattr(content, "text"):
+                        # TextContent - could be JSON data
+                        result_str = content.text
+                        result_type, parsed_data = self._parse_result(result_str)
+                    elif hasattr(content, "data") and hasattr(content, "mimeType"):
+                        # ImageContent - base64 image
+                        if content.mimeType.startswith("image/"):
+                            image_base64 = content.data
+
+                return result_str, result_type, parsed_data, image_base64
         except Exception as e:
-            return f"Error: {e}", None, None
+            return f"Error: {e}", None, None, None
 
     async def chat(self, user_message: str) -> AsyncGenerator[AgentEvent, None]:
         """
@@ -112,7 +133,7 @@ class MCPClient:
             AgentEvent(type="tool_result") - tool finished with result
             AgentEvent(type="text") - streaming text chunk (one per chunk)
         """
-        self._trim_messages()  
+        # self._trim_messages()  # TODO: fix trim logic for tool messages
         self.messages.append({"role": "user", "content": user_message})
 
         while True:
@@ -122,6 +143,7 @@ class MCPClient:
                 messages=self.messages,
                 tools=self.tools_cache or None,
                 stream=True,
+                temperature=0,  # Deterministic output for strict instruction following
             )
 
             # Collect streamed content
@@ -174,7 +196,11 @@ class MCPClient:
 
                     yield AgentEvent(type="tool_start", tool_name=name, tool_args=args)
 
-                    result_str, result_type, parsed_data = await self._call_tool(name, args)
+                    result_str, result_type, parsed_data, image_base64 = await self._call_tool(name, args)
+
+                    # Add image_base64 to parsed_data for frontend rendering
+                    if parsed_data and image_base64:
+                        parsed_data["image_base64"] = image_base64
 
                     yield AgentEvent(
                         type="tool_result",
@@ -185,16 +211,41 @@ class MCPClient:
                         parsed_data=parsed_data
                     )
 
+                    # For chart results with image, send image to LLM for understanding
+                    if result_type == "chart" and image_base64:
+                        llm_content = (
+                            f"[Chart rendered successfully: {parsed_data.get('title', 'Untitled')}]\n"
+                            "The interactive chart is already visible to the user above. "
+                            "Describe the key patterns or insights from this visualization in plain text. "
+                            "NEVER use markdown image syntax like ![...](...) in your response."
+                        )
+                    elif result_type == "table" and parsed_data:
+                        row_count = parsed_data.get("row_count", len(parsed_data.get("rows", [])))
+                        llm_content = f"[Table displayed: {parsed_data.get('title', 'Data')} - {row_count} rows]"
+                    else:
+                        llm_content = result_str
+
                     self.messages.append({
                         "role": "tool",
                         "tool_call_id": tc["id"],
-                        "content": result_str,
-                        # Extra fields for UI rendering (OpenAI ignores these)
+                        "content": llm_content,  # For LLM (image or summary)
+                        # Full data for UI rendering (OpenAI ignores extra fields)
                         "tool_name": name,
                         "tool_args": args,
                         "result_type": result_type,
-                        "parsed_data": parsed_data
+                        "parsed_data": parsed_data  # Contains data + image_base64 for frontend
                     })
+
+                    # Add instruction for RAG tool results
+                    if name == "search_pangenome_literature":
+                        self.messages.append({
+                            "role": "system",
+                            "content": (
+                                "INSTRUCTION: Answer the user's question based ONLY on the documents above. "
+                                "Do NOT use your own knowledge. Summarize key points and cite sources with titles/URLs. "
+                                "If the documents don't contain relevant information, say 'I don't have information about this in my knowledge base.'"
+                            )
+                        })
                 continue
 
             # No tool calls - save content and done
