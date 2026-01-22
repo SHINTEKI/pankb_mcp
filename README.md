@@ -41,29 +41,34 @@ To address this, we developed an MCP (Model Context Protocol) server that expose
 | `plot_pangenome_openness` | Open/Closed pangenome status comparison |
 | `plot_phylon_heatmap` | Phylon weight heatmap for genomes |
 
+### RAG Tools
+| Tool | Description |
+|------|-------------|
+| `search_pangenome_literature` | Search scientific literature about microbial pangenomics using RAG (VoyageAI embedding + Cohere reranking) |
+
 
 
 ## Connection 
-1. http://pankb-preprod.northeurope.cloudapp.azure.com/ai_assistant/ (limited to DTU IPs)
-2. claude_desktop_config.json
+1. https://pankb.org/mcp/ (localhost for developer to do testing)
+2. claude_desktop_config.json ()
 
 
 ## Roadmap
 
 - [x] initialize codebase, use uv for env control, follow microservice structure to separate server and client apps into two directories, but track them using one repo 
 - [x] write tools based on research papers, design tool categories
-- [ ] reuse previous RAG and add to tools
+- [x] reuse previous RAG and add to tools
 - [ ] design and write resources (optional)
-- [ ] design and write prompts 
+- [x] design and write prompts 
 - [x] write server app using FastMCP and uvicorn (to enable hot-reload for development), mount all server-side components
 - [x] write client app, initiate client instance, import openai llm, write interaction loop between user, client, server and llm
-- [x] write streamlit app, create session state to display conversation history, design welcome messages to guide usage
+- [x] write streamlit app, create session state to store conversation within sessions, design welcome messages to guide usage
 - [x] write dockerfiles to containerize server and client, write docker-compose to orchestrate
-- [x] add logs for both server and client apps
+- [ ] add logs for both server and client apps
 - [x] add CI/CD workflows and use self-hosted runner
-- [ ] design authorization methods, user-client (third-party OAuth), server-client
-- [ ] design a panel on the streamlit front page to display past conversations and available tools, resources and prompts 
-- [ ] build a SQL database to store user info, token usage and past conversations 
+- [x] design authorization methods, user-client (OpenID Connect), server-client
+- [ ] design a panel on the streamlit front page to display past conversations and available tools 
+- [x] build a SQL database to store user info, token usage and past conversations 
 - [ ] apply for a certificate from Let's Encrypt and use nginx for reverse proxy, connect to prod server and publish to MCP server registry
-- [ ] add export function for PNG/SVG and CSV
-- [ ] set up a monitoring and alerting system (Grafana)
+- [x] add export function for PNG/SVG and CSV
+- [ ] set up a monitoring and alerting system 
