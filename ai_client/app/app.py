@@ -182,7 +182,11 @@ def render_conversation_history():
 
         elif msg["role"] == "user":
             with st.chat_message("user"):
-                st.markdown(msg["content"])
+                # Strip literature search prefix for display
+                content = msg["content"]
+                if content.startswith("[search_pangenome_literature] "):
+                    content = content[len("[search_pangenome_literature] "):]
+                st.markdown(content)
             i += 1
 
         elif msg["role"] == "tool":
@@ -270,7 +274,9 @@ async def process_chat(client: MCPClient, user_prompt: str, text_placeholder, to
 if prompt := st.chat_input("What species are in PanKB?"):
     display_prompt = prompt  # What user sees
     if st.session_state.get("literature_mode", False):
-        user_prompt = f"Please use the search_pangenome_literature tool to answer my question: {prompt}"  
+        user_prompt = f"[search_pangenome_literature] {prompt}"
+    else:
+        user_prompt = prompt
 
     # Display user message 
     with st.chat_message("user"):

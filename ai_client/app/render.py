@@ -259,7 +259,7 @@ def render_table(table_data: dict):
 
 def render_tool_request(name: str, arguments: dict):
     """Render tool call request (arguments only)"""
-    with st.expander(f"Request Tool Call from MCP Server: {name}", expanded=False):
+    with st.expander(f"Request Tool Call: {name}", expanded=False):
         st.json(arguments)
 
 
@@ -273,7 +273,7 @@ def render_tool_response(name: str, result: str, result_type: str | None, parsed
             render_table(parsed_data)
     elif result_type == "string" and parsed_data:
         # Handle string type - check for markdown format
-        with st.expander(f"Result: {name}", expanded=False):
+        with st.expander(f"Result: {name}", expanded=True):
             content = parsed_data.get("content", "")
             if parsed_data.get("format") == "markdown":
                 st.markdown(content)
