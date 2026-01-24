@@ -5,6 +5,7 @@ import asyncio
 import json
 import os
 import uuid
+from pathlib import Path
 
 import streamlit as st
 from db import (
@@ -18,7 +19,7 @@ from fastmcp.client.auth import BearerAuth
 from mcp_client_stream import AgentEvent, MCPClient
 from render import render_tool_call, render_tool_request, render_tool_response
 
-load_dotenv()
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 # Configuration
 MCP_SERVER_URL = os.getenv("MCP_SERVER_URL")
