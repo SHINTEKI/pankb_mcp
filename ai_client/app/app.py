@@ -75,7 +75,7 @@ async def init_client():
 # Connect to MCP Server
 if not st.session_state.connected:
     try:
-        st.session_state.client = asyncio.run(init_client())
+        st.session_state.client = asyncio.run(init_client()) # MCPClient instance
         st.session_state.connected = True
         st.rerun()
     except Exception as e:
@@ -178,59 +178,41 @@ def render_conversation_history():
     while i < len(messages):
         msg = messages[i]
 
-        if msg["role"] == "system":
+        # Skip: system messages, Responses API internal items
+        if msg.get("role") == "system" or msg.get("type") in ("function_call", "function_call_output"):
             i += 1
+            continue
 
-        elif msg["role"] == "user":
+        elif msg.get("role") == "user":
             with st.chat_message("user"):
-                # Strip literature search prefix for display
                 content = msg["content"]
                 if content.startswith("[search_pangenome_literature] "):
                     content = content[len("[search_pangenome_literature] "):]
                 st.markdown(content)
             i += 1
 
-        elif msg["role"] == "tool":
-            # Skip - already rendered with assistant message
+        elif msg.get("role") == "tool":
+            with st.chat_message("assistant"):
+                render_tool_call(
+                    name=msg["tool_name"],
+                    arguments=msg["tool_args"],
+                    result=msg.get("content", ""),
+                    result_type=msg.get("result_type"),
+                    parsed_data=msg.get("parsed_data")
+                )
+                # Check if next message is assistant response (render together)
+                if i + 1 < len(messages) and messages[i + 1].get("role") == "assistant":
+                    st.markdown(messages[i + 1].get("content"))
+                    i += 1
             i += 1
 
-        elif msg["role"] == "assistant":
+        else:  # assistant
+            # Skip if already rendered with previous tool message
+            if i > 0 and messages[i - 1].get("role") == "tool":
+                i += 1
+                continue
             with st.chat_message("assistant"):
-                # If this assistant message has tool_calls, render them
-                if msg.get("tool_calls"):
-                    for tc in msg["tool_calls"]:
-                        tc_id = tc["id"]
-                        tc_name = tc["function"]["name"]
-                        tc_args = json.loads(tc["function"]["arguments"])
-
-                        # Find the corresponding tool result message
-                        for j in range(i + 1, len(messages)):
-                            tool_msg = messages[j]
-                            if tool_msg["role"] == "tool" and tool_msg.get("tool_call_id") == tc_id:
-                                render_tool_call(
-                                    name=tool_msg.get("tool_name", tc_name),
-                                    arguments=tc_args,
-                                    result=tool_msg["content"],
-                                    result_type=tool_msg.get("result_type"),
-                                    parsed_data=tool_msg.get("parsed_data")
-                                )
-                                break
-
-                # Render text content from this message
-                if msg.get("content"):
-                    st.markdown(msg["content"])
-
-                # Check if next non-tool message is an assistant with content (continuation)
-                # This handles the pattern: assistant(tool_calls) -> tool -> assistant(content)
-                j = i + 1
-                while j < len(messages) and messages[j]["role"] == "tool":
-                    j += 1
-                if j < len(messages) and messages[j]["role"] == "assistant":
-                    next_assistant = messages[j]
-                    # Only merge if: current has tool_calls, next has content but no tool_calls
-                    if msg.get("tool_calls") and next_assistant.get("content") and not next_assistant.get("tool_calls"):
-                        st.markdown(next_assistant["content"])
-                        i = j  # Skip to after the merged assistant message
+                st.markdown(msg.get("content", ""))
             i += 1
 
 

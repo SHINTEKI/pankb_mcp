@@ -1,6 +1,5 @@
 """
-MCP Client: Connect to MCP Server, convert tools to OpenAI function calling format
-(Streaming version)
+MCP Client: Connect to MCP Server, convert tools to OpenAI function calling format, and handle streaming chat with tool calls.
 """
 import json
 from dataclasses import dataclass
@@ -43,28 +42,14 @@ class MCPClient:
         self.openai = AsyncOpenAI(api_key=openai_api_key)
         self.tools_cache: list[dict] = []
         self.messages: list[dict] = []
-        if system_prompt:
-            self.messages.append({"role": "system", "content": system_prompt})
+        self.system_prompt = system_prompt 
 
     def _create_mcp_client(self) -> Client:
         return Client(self.mcp_server_url, auth=self.auth)
 
-    def clear_history(self, keep_system_prompt: bool = True):
-        """Clear conversation history, optionally keeping system prompt"""
-        if keep_system_prompt:
-            system_msg = next((m for m in self.messages if m["role"] == "system"), None)
-            self.messages = [system_msg] if system_msg else []
-        else:
-            self.messages = []
-
-    # def _trim_messages(self, max_messages: int = 40):
-    #     """Keep system prompt + most recent messages to avoid context overflow"""
-    #     if len(self.messages) <= max_messages:
-    #         return
-    #
-    #     system_msg = self.messages[0] if self.messages[0]["role"] == "system" else None
-    #     recent = self.messages[-max_messages:]
-    #     self.messages = [system_msg] + recent if system_msg else recent
+    def clear_history(self):
+        """Clear conversation history"""
+        self.messages = []
 
     async def connect(self):
         """Connect to MCP Server and fetch tools"""
@@ -73,11 +58,9 @@ class MCPClient:
             self.tools_cache = [
                 {
                     "type": "function",
-                    "function": {
-                        "name": t.name,
-                        "description": t.description or "",
-                        "parameters": t.inputSchema or {"type": "object", "properties": {}}
-                    }
+                    "name": t.name,
+                    "description": t.description or "",
+                    "parameters": t.inputSchema or {"type": "object", "properties": {}},
                 }
                 for t in mcp_tools
             ]
@@ -95,10 +78,6 @@ class MCPClient:
     async def _call_tool(self, name: str, args: dict) -> tuple[str, str | None, dict | None, str | None]:
         """
         Call MCP tool and return (result_str, result_type, parsed_data, image_base64)
-
-        Handles MCP standard format where tool may return multiple content blocks:
-        - ImageContent: base64 image for AI understanding
-        - TextContent: JSON data for rendering
         """
         try:
             async with self._create_mcp_client() as client:
@@ -109,14 +88,11 @@ class MCPClient:
                 result_type = None
                 parsed_data = None
 
-                # Process all content blocks
                 for content in result.content:
                     if hasattr(content, "text"):
-                        # TextContent - could be JSON data
                         result_str = content.text
                         result_type, parsed_data = self._parse_result(result_str)
                     elif hasattr(content, "data") and hasattr(content, "mimeType"):
-                        # ImageContent - base64 image
                         if content.mimeType.startswith("image/"):
                             image_base64 = content.data
 
@@ -127,78 +103,69 @@ class MCPClient:
     async def chat(self, user_message: str) -> AsyncGenerator[AgentEvent, None]:
         """
         Process user message and yield events (streaming).
+        Using OpenAI Responses API.
 
         Yields:
             AgentEvent(type="tool_start") - tool is being called
             AgentEvent(type="tool_result") - tool finished with result
             AgentEvent(type="text") - streaming text chunk (one per chunk)
         """
-        # self._trim_messages()  # TODO: fix trim logic for tool messages
+        # Add user message to input
         self.messages.append({"role": "user", "content": user_message})
 
         while True:
-            # Streaming call
-            stream = await self.openai.chat.completions.create(
+            # Filter messages to only include valid API items
+            api_input = self._filter_messages_for_api()
+
+            # Streaming call using Responses API
+            stream = await self.openai.responses.create(
                 model=self.model,
-                messages=self.messages,
+                input=api_input,
+                instructions=self.system_prompt,
                 tools=self.tools_cache or None,
                 stream=True,
                 temperature=0,  # Deterministic output for strict instruction following
             )
 
-            # Collect streamed content
+            # Collect streamed content and final response
             full_content = ""
-            tool_calls_map: dict[int, dict] = {}  # index -> {id, name, arguments}
+            function_calls: list[dict] = []
 
-            async for chunk in stream:
-                delta = chunk.choices[0].delta
+            async for event in stream:
+                # Handle text output deltas (for streaming display)
+                if event.type == "response.output_text.delta":
+                    full_content += event.delta
+                    yield AgentEvent(type="text", content=event.delta)
 
-                # Stream text content immediately
-                if delta.content:
-                    full_content += delta.content
-                    yield AgentEvent(type="text", content=delta.content)
+                # Handle tool call output - extract complete function calls
+                elif event.type == "response.output_item.done":
+                    if hasattr(event.item, "type") and event.item.type == "function_call":
+                        function_calls.append({
+                            "call_id": event.item.call_id,
+                            "name": event.item.name,
+                            "arguments": event.item.arguments
+                        })
 
-                # Collect tool calls (need to reassemble from chunks)
-                if delta.tool_calls:
-                    for tc in delta.tool_calls:
-                        idx = tc.index
-                        if idx not in tool_calls_map:
-                            tool_calls_map[idx] = {"id": "", "name": "", "arguments": ""}
-                        if tc.id:
-                            tool_calls_map[idx]["id"] = tc.id
-                        if tc.function:
-                            if tc.function.name:
-                                tool_calls_map[idx]["name"] = tc.function.name
-                            if tc.function.arguments:
-                                tool_calls_map[idx]["arguments"] += tc.function.arguments
+            # Handle function calls if any
+            if function_calls:
+                # Add function_call items to messages for next API call
+                for fc in function_calls:
+                    self.messages.append({
+                        "type": "function_call",
+                        "call_id": fc["call_id"],
+                        "name": fc["name"],
+                        "arguments": fc["arguments"]
+                    })
 
-            # Handle tool calls if any
-            if tool_calls_map:
-                # Build tool_calls list for messages
-                tool_calls_list = [
-                    {
-                        "id": tc["id"],
-                        "type": "function",
-                        "function": {"name": tc["name"], "arguments": tc["arguments"]}
-                    }
-                    for tc in tool_calls_map.values()
-                ]
-                self.messages.append({
-                    "role": "assistant",
-                    "content": full_content or None,
-                    "tool_calls": tool_calls_list
-                })
-
-                # Execute each tool
-                for tc in tool_calls_map.values():
-                    name = tc["name"]
-                    args = json.loads(tc["arguments"])
+                # Execute each function
+                for fc in function_calls:
+                    name = fc["name"]
+                    args = json.loads(fc["arguments"]) if fc["arguments"] else {}
 
                     yield AgentEvent(type="tool_start", tool_name=name, tool_args=args)
 
                     result_str, result_type, parsed_data, image_base64 = await self._call_tool(name, args)
 
-                    # Add image_base64 to parsed_data for frontend rendering
                     if parsed_data and image_base64:
                         parsed_data["image_base64"] = image_base64
 
@@ -211,7 +178,7 @@ class MCPClient:
                         parsed_data=parsed_data
                     )
 
-                    # For chart results with image, send image to LLM for understanding
+                    # Prepare content for LLM
                     if result_type == "chart" and image_base64:
                         llm_content = (
                             f"[Chart rendered successfully: {parsed_data.get('title', 'Untitled')}]\n"
@@ -225,15 +192,23 @@ class MCPClient:
                     else:
                         llm_content = result_str
 
+                    # Add function_call_output to messages (Responses API format)
                     self.messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc["id"],
-                        "content": llm_content,  # For LLM (image or summary)
-                        # Full data for UI rendering (OpenAI ignores extra fields)
+                        "type": "function_call_output",
+                        "call_id": fc["call_id"],
+                        "output": llm_content
+                    })
+
+                    # Store extra data for UI rendering (we'll need this for history)
+                    # Add a marker message for UI (will be filtered when sending to API)
+                    self.messages.append({
+                        "role": "tool",  # Marker for UI rendering
+                        "tool_call_id": fc["call_id"],
+                        "content": llm_content,
                         "tool_name": name,
                         "tool_args": args,
                         "result_type": result_type,
-                        "parsed_data": parsed_data  # Contains data + image_base64 for frontend
+                        "parsed_data": parsed_data
                     })
 
                     # Add instruction for RAG tool results
@@ -248,7 +223,25 @@ class MCPClient:
                         })
                 continue
 
-            # No tool calls - save content and done
+            # No function calls - save content and done
             if full_content:
                 self.messages.append({"role": "assistant", "content": full_content})
             break
+
+    def _filter_messages_for_api(self) -> list[dict]:
+        """
+        Filter messages to only include items valid for Responses API input.
+        Removes UI-only marker messages (role="tool").
+        """
+        valid_items = []
+        for msg in self.messages:
+            # Skip UI-only tool marker messages
+            if msg.get("role") == "tool":
+                continue
+            # Responses API items: function_call, function_call_output
+            if msg.get("type") in ("function_call", "function_call_output"):
+                valid_items.append(msg)
+            # Standard message format: user, assistant, system
+            elif msg.get("role") in ("user", "assistant", "system"):
+                valid_items.append(msg)
+        return valid_items
