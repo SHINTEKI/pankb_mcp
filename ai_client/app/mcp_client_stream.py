@@ -61,6 +61,7 @@ class MCPClient:
                     "name": t.name,
                     "description": t.description or "",
                     "parameters": t.inputSchema or {"type": "object", "properties": {}},
+                    "strict": False,
                 }
                 for t in mcp_tools
             ]
