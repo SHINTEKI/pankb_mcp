@@ -211,7 +211,7 @@ def render_plotly_chart(chart_data: dict):
                     annotation_text=vline.get("label", "")
                 )
 
-            st.plotly_chart(fig, use_container_width=True, key=f"plotly_{uuid.uuid4()}")
+            st.plotly_chart(fig, width="stretch", key=f"plotly_{uuid.uuid4()}")
             _render_download_buttons(fig, title, data)
 
             stats = data.get("stats")
@@ -246,7 +246,7 @@ def render_table(table_data: dict):
     if summary:
         st.caption(summary)
 
-    st.dataframe(df, use_container_width=True, hide_index=True, key=f"dataframe_{uuid.uuid4()}")
+    st.dataframe(df, width="stretch", hide_index=True, key=f"dataframe_{uuid.uuid4()}")
 
     st.download_button(
         "📥 CSV",

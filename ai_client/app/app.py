@@ -98,7 +98,7 @@ with st.sidebar:
     st.divider()
 
     # New chat button
-    if st.button("+ New Chat", use_container_width=True):
+    if st.button("+ New Chat", width="stretch"):
         st.session_state.conversation_id = str(uuid.uuid4())
         st.session_state.client.clear_history() # 看这一页会怎么重新渲染
         st.rerun()
@@ -116,7 +116,7 @@ with st.sidebar:
                 if st.button(
                     f"{'▶ ' if is_current else ''}{title}",
                     key=f"conv_{conv_id}",
-                    use_container_width=True,
+                    width="stretch",
                     disabled=is_current
                 ):
                     # Switch to this conversation
