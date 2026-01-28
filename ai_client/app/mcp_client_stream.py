@@ -123,6 +123,7 @@ class MCPClient:
                 input=api_input,
                 instructions=self.system_prompt,
                 tools=self.tools_cache or None,
+                store= False,
                 stream=True,
                 temperature=0,  # Deterministic output for strict instruction following
             )
