@@ -32,9 +32,9 @@ def make_table_response(title: str, columns: list[str], rows: list[dict], summar
 
 
 @mcp.tool()
-def query_families(family: Optional[str] = None) -> str:
+def list_families(family: Optional[str] = None) -> str:
     """
-    Query microbial families in PanKB.
+    List microbial families in PanKB.
     Returns family-level statistics including species count and total genomes.
 
     Args:
@@ -82,14 +82,14 @@ def query_families(family: Optional[str] = None) -> str:
 
 
 @mcp.tool()
-def query_species(
+def list_species(
     family: Optional[str] = None,
     species: Optional[str] = None,
     pangenome_analysis: Optional[str] = None,
     limit: int = 50
 ) -> str:
     """
-    Query species (pangenome analyses) in PanKB.
+    List species (pangenome analyses) in PanKB.
     Returns pangenome statistics including core/shell/cloud gene counts and openness.
 
     Args:
@@ -104,9 +104,12 @@ def query_species(
     if family:
         query["family"] = {"$regex": family, "$options": "i"}
     if species:
-        query["species"] = {"$regex": species, "$options": "i"}
+        # Normalize species name: replace spaces with underscores for regex search
+        species_normalized = species.replace(" ", "_")
+        query["species"] = {"$regex": species_normalized, "$options": "i"}
     if pangenome_analysis:
-        query["pangenome_analysis"] = pangenome_analysis
+        # Normalize species name: replace spaces with underscores
+        query["pangenome_analysis"] = pangenome_analysis.replace(" ", "_")
 
     results = list(collection.find(query, {"_id": 0}).limit(limit))
 
@@ -141,7 +144,7 @@ def query_species(
 
 
 @mcp.tool()
-def query_genomes(
+def list_genomes(
     pangenome_analysis: Optional[str] = None,
     genome_ids: Optional[List[str]] = None,
     country: Optional[str] = None,
@@ -149,7 +152,7 @@ def query_genomes(
     limit: int = 100
 ) -> str:
     """
-    Query genomes in PanKB.
+    List genomes in PanKB.
     Returns genome details including GC content, length, phylogroup, and isolation info.
 
     Args:
@@ -163,7 +166,8 @@ def query_genomes(
 
     match_query = {}
     if pangenome_analysis:
-        match_query["pangenome_analysis"] = pangenome_analysis
+        # Normalize species name: replace spaces with underscores
+        match_query["pangenome_analysis"] = pangenome_analysis.replace(" ", "_")
     if genome_ids:
         match_query["genome_id"] = {"$in": genome_ids}
 
@@ -219,21 +223,25 @@ def query_genomes(
 
 
 @mcp.tool()
-def query_genes(
-    pangenome_analysis: Optional[str] = None,
+def list_genes(
     gene_names: Optional[List[str]] = None,
+    pangenome_analysis: Optional[str] = None,
     pangenomic_class: Optional[str] = None,
     cog_category: Optional[str] = None,
     protein_search: Optional[str] = None,
     limit: int = 100
 ) -> str:
     """
-    Query genes in PanKB.
+    List genes in PanKB.
     Returns gene details including annotations, frequency, and pangenomic class.
 
+    IMPORTANT: When searching by gene name without species filter, returns the gene
+    across ALL species (same gene name exists in multiple species). Only add
+    pangenome_analysis filter if user explicitly specifies a species.
+
     Args:
-        pangenome_analysis: Filter by pangenome analysis (species)
-        gene_names: List of gene names to query
+        gene_names: List of gene names to query (searches across all species by default)
+        pangenome_analysis: Filter by species - only use if user explicitly requests a specific species
         pangenomic_class: Filter by pangenomic class ('Core', 'Accessory', or 'Rare')
         cog_category: Filter by COG category (e.g., 'K' for Transcription)
         protein_search: Search in protein descriptions (case-insensitive)
@@ -243,7 +251,8 @@ def query_genes(
 
     query = {}
     if pangenome_analysis:
-        query["pangenome_analysis"] = pangenome_analysis
+        # Normalize species name: replace spaces with underscores
+        query["pangenome_analysis"] = pangenome_analysis.replace(" ", "_")
     if gene_names:
         query["gene"] = {"$in": gene_names}
     if pangenomic_class:
@@ -280,13 +289,13 @@ def query_genes(
 
 
 @mcp.tool()
-def query_pathways(
+def list_pathways(
     pathway_ids: Optional[List[str]] = None,
     pathway_name_search: Optional[str] = None,
     limit: int = 50
 ) -> str:
     """
-    Query KEGG pathways in PanKB.
+    List KEGG pathways in PanKB.
 
     Args:
         pathway_ids: KEGG pathway IDs (e.g., ['map00010', 'map00020'])
@@ -318,7 +327,7 @@ def query_pathways(
 
 
 @mcp.tool()
-def query_stats(stat_type: str = "summary") -> str:
+def get_stats(stat_type: str = "summary") -> str:
     """
     Get PanKB database statistics including total counts of genomes, genes,
     mutations, and distribution by family/country.

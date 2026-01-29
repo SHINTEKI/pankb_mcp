@@ -194,6 +194,9 @@ def plot_gene_frequency_histogram(pangenome_analysis: str):
     Args:
         pangenome_analysis: Species pangenome analysis name (e.g., 'Escherichia_coli')
     """
+    # Normalize species name: replace spaces with underscores
+    pangenome_analysis = pangenome_analysis.replace(" ", "_")
+
     collection = mongo_client.get_collection(Config.MONGODB_COLLECTIONS["gene_annotations"])
 
     pipeline = [
@@ -234,6 +237,9 @@ def plot_pangenome_class_distribution(pangenome_analysis: str):
     Args:
         pangenome_analysis: Species pangenome analysis name (e.g., 'Bacillus_subtilis')
     """
+    # Normalize species name: replace spaces with underscores
+    pangenome_analysis = pangenome_analysis.replace(" ", "_")
+
     collection = mongo_client.get_collection(Config.MONGODB_COLLECTIONS["gene_annotations"])
 
     pipeline = [
@@ -278,6 +284,9 @@ def plot_cog_category_distribution(pangenome_analysis: str, top_n: int = 15):
         pangenome_analysis: Species pangenome analysis name
         top_n: Number of top categories to show (default: 15)
     """
+    # Normalize species name: replace spaces with underscores
+    pangenome_analysis = pangenome_analysis.replace(" ", "_")
+
     collection = mongo_client.get_collection(Config.MONGODB_COLLECTIONS["gene_annotations"])
 
     pipeline = [
@@ -422,6 +431,9 @@ def plot_gc_content_distribution(pangenome_analysis: str):
     Args:
         pangenome_analysis: Species pangenome analysis name
     """
+    # Normalize species name: replace spaces with underscores
+    pangenome_analysis = pangenome_analysis.replace(" ", "_")
+
     collection = mongo_client.get_collection(Config.MONGODB_COLLECTIONS["genome_info"])
 
     results = list(collection.find(
@@ -465,6 +477,10 @@ def plot_geographic_distribution(pangenome_analysis: Optional[str] = None, top_n
         pangenome_analysis: Optional: filter by species pangenome analysis name
         top_n: Number of top countries to show (default: 20)
     """
+    # Normalize species name: replace spaces with underscores
+    if pangenome_analysis:
+        pangenome_analysis = pangenome_analysis.replace(" ", "_")
+
     if pangenome_analysis:
         genome_collection = mongo_client.get_collection(Config.MONGODB_COLLECTIONS["genome_info"])
         pipeline = [
@@ -526,6 +542,10 @@ def plot_isolation_source_distribution(pangenome_analysis: Optional[str] = None,
         pangenome_analysis: Optional: filter by species pangenome analysis name
         top_n: Number of top sources to show (default: 10)
     """
+    # Normalize species name: replace spaces with underscores
+    if pangenome_analysis:
+        pangenome_analysis = pangenome_analysis.replace(" ", "_")
+
     if pangenome_analysis:
         genome_collection = mongo_client.get_collection(Config.MONGODB_COLLECTIONS["genome_info"])
         pipeline = [
@@ -583,6 +603,9 @@ def plot_phylogroup_distribution(pangenome_analysis: str):
     Args:
         pangenome_analysis: Species pangenome analysis name
     """
+    # Normalize species name: replace spaces with underscores
+    pangenome_analysis = pangenome_analysis.replace(" ", "_")
+
     collection = mongo_client.get_collection(Config.MONGODB_COLLECTIONS["genome_info"])
 
     pipeline = [
@@ -684,6 +707,9 @@ def plot_phylon_heatmap(pangenome_analysis: str, max_genomes: int = 50):
         pangenome_analysis: Species pangenome analysis name
         max_genomes: Maximum number of genomes to show (default: 50)
     """
+    # Normalize species name: replace spaces with underscores
+    pangenome_analysis = pangenome_analysis.replace(" ", "_")
+
     collection = mongo_client.get_collection(Config.MONGODB_COLLECTIONS["genome_phylons"])
 
     results = list(collection.find(
@@ -741,6 +767,9 @@ def plot_heaps_law(species: str):
     Args:
         species: Species identifier (e.g., 'Escherichia_coli')
     """
+    # Normalize species name: replace spaces with underscores
+    species = species.replace(" ", "_")
+
     try:
         data = blob_client.fetch_json(species, "heaps_law.json")
     except requests.exceptions.HTTPError as e:
@@ -786,6 +815,9 @@ def plot_cumulative_gene_frequency(species: str):
     Args:
         species: Species identifier (e.g., 'Escherichia_coli')
     """
+    # Normalize species name: replace spaces with underscores
+    species = species.replace(" ", "_")
+
     try:
         data = blob_client.fetch_json(species, "cum_freq.json")
     except requests.exceptions.HTTPError as e:
@@ -827,6 +859,9 @@ def plot_gene_frequency_curve(species: str):
     Args:
         species: Species identifier (e.g., 'Escherichia_coli')
     """
+    # Normalize species name: replace spaces with underscores
+    species = species.replace(" ", "_")
+
     try:
         data = blob_client.fetch_json(species, "gene_freq.json")
     except requests.exceptions.HTTPError as e:
@@ -888,6 +923,9 @@ def plot_cog_by_gene_class(species: str):
     Args:
         species: Species identifier (e.g., 'Escherichia_coli')
     """
+    # Normalize species name: replace spaces with underscores
+    species = species.replace(" ", "_")
+
     try:
         data = blob_client.fetch_json(species, "COG_distribution.json")
     except requests.exceptions.HTTPError as e:
@@ -927,15 +965,26 @@ def plot_cog_by_gene_class(species: str):
 
 
 @mcp.tool()
-def get_gene_presence_absence_matrix(species: str, gene_class: Literal["core", "accessory", "rare"]):
+def plot_gene_presence_absence_matrix(
+    species: str,
+    gene_class: Literal["core", "accessory", "rare"],
+    max_genomes: int = 100,
+    max_genes: int = 500
+):
     """
-    Get gene presence/absence matrix data for heatmap visualization.
-    Returns matrix dimensions and summary statistics. The full matrix can be very large.
+    Plot gene presence/absence matrix as a heatmap.
+    Shows which genes are present (1) or absent (0) in each genome.
+    Limited to max_genomes x max_genes for performance. View full matrix on PanKB website.
 
     Args:
         species: Species identifier (e.g., 'Escherichia_coli')
-        gene_class: Gene class to retrieve: 'core', 'accessory', or 'rare'
+        gene_class: Gene class to visualize: 'core', 'accessory', or 'rare'
+        max_genomes: Maximum number of genomes to display (default: 100)
+        max_genes: Maximum number of genes to display (default: 500)
     """
+    # Normalize species name: replace spaces with underscores
+    species = species.replace(" ", "_")
+
     try:
         data = blob_client.fetch_gzip_json(species, f"heatmap_{gene_class}.json.gz")
     except requests.exceptions.HTTPError as e:
@@ -947,38 +996,63 @@ def get_gene_presence_absence_matrix(species: str, gene_class: Literal["core", "
     cols = data.get("cols", [])
     matrix = data.get("matrix", [])
 
+    if not matrix:
+        return f"No matrix data available for {species}"
+
     n_genomes = len(rows)
     n_genes = len(cols)
 
-    genome_names = [r.get("name", "unknown") for r in rows[:5]]
-    gene_names = [c.get("name", "unknown") for c in cols[:5]]
+    # Limit dimensions for visualization
+    display_genomes = min(n_genomes, max_genomes)
+    display_genes = min(n_genes, max_genes)
 
-    total_elements = n_genomes * n_genes
-    if matrix:
-        ones = sum(sum(row) for row in matrix)
-        sparsity = 1 - (ones / total_elements) if total_elements > 0 else 0
-    else:
-        sparsity = 0
+    # Extract subset of data
+    genome_names = [r.get("name", "unknown")[:20] for r in rows[:display_genomes]]
+    gene_names = [c.get("name", "unknown")[:15] for c in cols[:display_genes]]
+    matrix_subset = [row[:display_genes] for row in matrix[:display_genomes]]
 
-    return (f"Gene presence/absence matrix for {species} ({gene_class} genes):\n\n"
-            f"Matrix dimensions:\n"
-            f"- Genomes (rows): {n_genomes:,}\n"
-            f"- Genes (columns): {n_genes:,}\n"
-            f"- Total elements: {total_elements:,}\n"
-            f"- Sparsity: {sparsity:.1%}\n\n"
-            f"Sample genomes: {', '.join(genome_names)}...\n"
-            f"Sample genes: {', '.join(gene_names)}...")
+    # Website URL for full visualization
+    website_url = f"https://pankb.org/pangenome_analyses/overview/?species={species}"
+
+    is_truncated = n_genomes > display_genomes or n_genes > display_genes
+
+    return make_chart_response(
+        chart_type="heatmap",
+        title=f"Gene Presence/Absence - {species.replace('_', ' ')} ({gene_class.capitalize()})",
+        data={
+            "z": matrix_subset,
+            "x": gene_names,
+            "y": genome_names,
+            "labels": {"x": "Genes", "y": "Genomes"},
+            "stats": {
+                "total_genomes": n_genomes,
+                "total_genes": n_genes,
+                "displayed_genomes": display_genomes,
+                "displayed_genes": display_genes,
+                "is_truncated": is_truncated
+            },
+            "website_url": website_url
+        },
+        layout={
+            "colorscale": [[0, "#f0f0f0"], [1, "#2ecc71"]],
+            "showscale": False
+        }
+    )
 
 
 @mcp.tool()
 def get_phylogenetic_tree(species: str):
     """
-    Get phylogenetic tree in Newick format for a species.
-    Can be used for tree visualization or phylogenetic analysis.
+    Get phylogenetic tree information for a species.
+    Returns tree statistics and a link to view the interactive tree on PanKB website.
+    The Newick format is also provided for external visualization tools.
 
     Args:
         species: Species identifier (e.g., 'Escherichia_coli')
     """
+    # Normalize species name: replace spaces with underscores
+    species = species.replace(" ", "_")
+
     try:
         newick = blob_client.fetch_text(species, "phylogenetic_tree.newick")
     except requests.exceptions.HTTPError as e:
@@ -986,18 +1060,37 @@ def get_phylogenetic_tree(species: str):
             return f"Phylogenetic tree not available for {species}."
         return f"HTTP Error: {str(e)}"
 
-    tips = re.findall(r'([A-Za-z0-9_]+):', newick)
+    # Extract tip names (genome IDs)
+    tips = re.findall(r'([A-Za-z0-9_.-]+):', newick)
     n_tips = len(tips)
 
-    if len(newick) > 2000:
-        newick_display = newick[:2000] + "... [truncated]"
-    else:
-        newick_display = newick
+    # Calculate tree depth (approximate by counting max nested parentheses)
+    max_depth = 0
+    current_depth = 0
+    for char in newick:
+        if char == '(':
+            current_depth += 1
+            max_depth = max(max_depth, current_depth)
+        elif char == ')':
+            current_depth -= 1
 
-    return (f"Phylogenetic tree for {species}:\n\n"
-            f"Number of tips (genomes): {n_tips}\n"
-            f"Tree length: {len(newick):,} characters\n\n"
-            f"Newick format:\n{newick_display}")
+    # Website URL for interactive tree visualization
+    website_url = f"https://pankb.org/pangenome_analyses/overview/?species={species}"
+
+    # Return structured JSON for frontend rendering
+    return json.dumps({
+        "type": "string",
+        "format": "tree_info",
+        "content": {
+            "species": species.replace('_', ' '),
+            "n_tips": n_tips,
+            "tree_depth": max_depth,
+            "newick_length": len(newick),
+            "sample_tips": tips[:10],  # Show first 10 genome IDs
+            "website_url": website_url,
+            "message": f"Phylogenetic tree with {n_tips} genomes. View the interactive tree on PanKB website."
+        }
+    })
 
 
 @mcp.tool()
@@ -1010,6 +1103,9 @@ def plot_dn_ds_ratio(species: str):
     Args:
         species: Species identifier (e.g., 'Escherichia_coli')
     """
+    # Normalize species name: replace spaces with underscores
+    species = species.replace(" ", "_")
+
     try:
         data = blob_client.fetch_json(species, "panalleleome/dn_ds.json")
     except requests.exceptions.HTTPError:
@@ -1072,6 +1168,9 @@ def plot_variant_dominant_frequency(species: str):
     Args:
         species: Species identifier (e.g., 'Escherichia_coli')
     """
+    # Normalize species name: replace spaces with underscores
+    species = species.replace(" ", "_")
+
     try:
         data = blob_client.fetch_json(species, "panalleleome/step_line.json")
     except requests.exceptions.HTTPError:
