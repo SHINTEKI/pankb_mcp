@@ -26,18 +26,19 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
 
 
     CREATE TABLE token_usage (
-        id          BIGSERIAL PRIMARY KEY,
-        user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        id              BIGSERIAL PRIMARY KEY,
+        user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        conversation_id UUID,
 
-        tokens_in   INTEGER NOT NULL,
-        tokens_out  INTEGER NOT NULL,
-        model       TEXT,
+        tokens_in       INTEGER NOT NULL,
+        tokens_out      INTEGER NOT NULL,
+        model           TEXT,
 
-        created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
     );
 
-    CREATE INDEX idx_token_usage_user_time
-    ON token_usage (user_id, created_at);
+    CREATE INDEX idx_token_usage_user_time ON token_usage (user_id, created_at);
+    CREATE INDEX idx_token_usage_conversation ON token_usage (conversation_id);
 
 
 

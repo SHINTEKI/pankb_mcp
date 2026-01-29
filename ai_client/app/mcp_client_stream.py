@@ -11,13 +11,16 @@ from openai import AsyncOpenAI
 
 @dataclass
 class AgentEvent:
-    """Event yielded during chat processing"""
-    type: str  # "tool_start", "tool_result", "text"
-    content: str | None = None  # text content or tool result string
+    """Event yielded during chat processing for frontend rendering"""
+    type: str  # "tool_start", "tool_result", "text", "usage"
+    content: str | None = None  # json formatted tool result (chart, table, rag) or plain text for tool call errors
     tool_name: str | None = None
     tool_args: dict | None = None
-    result_type: str | None = None  # "chart", "table", or None
+    result_type: str | None = None  # "chart", "table", "string", or None for plain text
     parsed_data: dict | None = None
+    # Token usage (only for type="usage")
+    tokens_in: int | None = None
+    tokens_out: int | None = None
 
 
 class MCPClient:
@@ -67,10 +70,10 @@ class MCPClient:
             ]
 
     def _parse_result(self, result_str: str) -> tuple[str | None, dict | None]:
-        """Parse tool result for chart/table data"""
+        """Parse tool result for chart/table/url data"""
         try:
             data = json.loads(result_str)
-            if isinstance(data, dict) and data.get("type") in ("chart", "table", "string"):
+            if isinstance(data, dict) and data.get("type") in ("chart", "table", "string", "url"):
                 return data["type"], data
         except (json.JSONDecodeError, TypeError):
             pass
@@ -132,6 +135,7 @@ class MCPClient:
             # Collect streamed content and final response
             full_content = ""
             function_calls: list[dict] = []
+            usage_info: dict | None = None
 
             async for event in stream:
                 # Handle text output deltas (for streaming display)
@@ -147,6 +151,15 @@ class MCPClient:
                             "name": event.item.name,
                             "arguments": event.item.arguments
                         })
+
+                # Capture usage from response.completed event
+                elif event.type == "response.completed":
+                    if hasattr(event, "response") and hasattr(event.response, "usage"):
+                        usage = event.response.usage
+                        usage_info = {
+                            "input_tokens": usage.input_tokens,
+                            "output_tokens": usage.output_tokens
+                        }
 
             # Handle function calls if any
             if function_calls:
@@ -191,6 +204,8 @@ class MCPClient:
                     elif result_type == "table" and parsed_data:
                         row_count = parsed_data.get("row_count", len(parsed_data.get("rows", [])))
                         llm_content = f"[Table displayed: {parsed_data.get('title', 'Data')} - {row_count} rows]"
+                    elif result_type == "url" and parsed_data:
+                        llm_content = f"[URL provided: {parsed_data.get('title', 'Link')} - {parsed_data.get('url', '')}]"
                     else:
                         llm_content = result_str
 
@@ -228,6 +243,14 @@ class MCPClient:
             # No function calls - save content and done
             if full_content:
                 self.messages.append({"role": "assistant", "content": full_content})
+
+            # Yield usage event at the end of the response
+            if usage_info:
+                yield AgentEvent(
+                    type="usage",
+                    tokens_in=usage_info["input_tokens"],
+                    tokens_out=usage_info["output_tokens"]
+                )
             break
 
     def _filter_messages_for_api(self) -> list[dict]:

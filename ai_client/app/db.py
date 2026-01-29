@@ -166,16 +166,22 @@ def get_chat_history(user_id: str, conversation_id: str = None, limit: int = 50)
             return [dict(row) for row in cur.fetchall()]
 
 
-def record_token_usage(user_id: str, tokens_in: int, tokens_out: int, model: str = None):
-    """Record token usage for a user"""
+def record_token_usage(
+    user_id: str,
+    tokens_in: int,
+    tokens_out: int,
+    model: str = None,
+    conversation_id: str = None
+):
+    """Record token usage for a user request"""
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO token_usage (user_id, tokens_in, tokens_out, model)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO token_usage (user_id, conversation_id, tokens_in, tokens_out, model)
+                VALUES (%s, %s, %s, %s, %s)
                 """,
-                (user_id, tokens_in, tokens_out, model)
+                (user_id, conversation_id, tokens_in, tokens_out, model)
             )
             conn.commit()
 

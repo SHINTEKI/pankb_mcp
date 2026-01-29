@@ -14,6 +14,7 @@ from db import (
     get_conversation,
     get_or_create_user,
     get_user_conversations,
+    record_token_usage,
     save_conversation,
 )
 from dotenv import load_dotenv
@@ -235,9 +236,10 @@ render_conversation_history()
 
 # Process chat with streaming updates
 async def process_chat(client: MCPClient, user_prompt: str, text_placeholder, tool_container):
-    """Process chat and update UI. Returns (llm_text, tool_calls)"""
+    """Process chat and update UI. Returns (llm_text, tool_calls, usage)"""
     llm_text = ""
     tool_calls = []
+    usage = None
 
     async for event in client.chat(user_prompt):
         if event.type == "tool_start":
@@ -264,7 +266,10 @@ async def process_chat(client: MCPClient, user_prompt: str, text_placeholder, to
             llm_text += event.content
             text_placeholder.markdown(llm_text + "▌")
 
-    return llm_text, tool_calls
+        elif event.type == "usage":
+            usage = {"tokens_in": event.tokens_in, "tokens_out": event.tokens_out}
+
+    return llm_text, tool_calls, usage
 
 
 # User input
@@ -284,7 +289,7 @@ if prompt := st.chat_input("What species are in PanKB?"):
         tool_container = st.container()
         text_placeholder = st.empty()
 
-        llm_text, tool_calls = asyncio.run(
+        llm_text, tool_calls, usage = asyncio.run(
             process_chat(
                 st.session_state.client,
                 user_prompt,
@@ -295,7 +300,7 @@ if prompt := st.chat_input("What species are in PanKB?"):
 
         text_placeholder.markdown(llm_text)
 
-    # Save entire conversation to database
+    # Save conversation and record token usage
     if st.session_state.db_user and st.session_state.client:
         try:
             save_conversation(
@@ -304,6 +309,15 @@ if prompt := st.chat_input("What species are in PanKB?"):
                 messages=st.session_state.client.messages,
                 openai_client=get_sync_openai_client()
             )
+            # Record token usage if available
+            if usage:
+                record_token_usage(
+                    user_id=st.session_state.db_user["id"],
+                    tokens_in=usage["tokens_in"],
+                    tokens_out=usage["tokens_out"],
+                    model=MODEL,
+                    conversation_id=st.session_state.conversation_id
+                )
         except Exception:
             pass
 
