@@ -2,10 +2,57 @@
 Database utilities for user management and chat history
 """
 import os
-import json
 import psycopg2
 from psycopg2.extras import RealDictCursor, Json
 from contextlib import contextmanager
+from openai import OpenAI
+
+
+def generate_conversation_title(
+    first_message: str,
+    client: OpenAI = None,
+    model: str = "gpt-4o-mini"
+) -> str:
+    """
+    Use LLM to generate a concise conversation title from the first user message.
+    Returns a short title (max 30 chars) summarizing the conversation topic.
+
+    Args:
+        first_message: The user's first message in the conversation
+        client: OpenAI client instance (optional, creates new one if not provided)
+        model: Model to use for title generation
+    """
+    if not first_message or not first_message.strip():
+        return "New conversation"
+
+    try:
+        if client is None:
+            client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Generate a very short title (max 6 words, under 30 characters) for this conversation. "
+                        "The title should capture the main topic or intent. "
+                        "Do NOT use quotes or punctuation. Just output the title directly. "
+                        "Examples: 'Bacillus物种查询', 'Gene频率分析', '泛基因组文献搜索'"
+                    )
+                },
+                {"role": "user", "content": first_message}
+            ],
+            max_tokens=30,
+            temperature=0.3,
+        )
+        title = response.choices[0].message.content.strip()
+        # Ensure title isn't too long
+        if len(title) > 50:
+            title = title[:47] + "..."
+        return title or "New conversation"
+    except Exception:
+        # Fallback to truncation if LLM fails
+        return first_message[:50] + "..." if len(first_message) > 50 else first_message
 
 
 def get_db_config():
@@ -151,14 +198,20 @@ def get_user_token_stats(user_id: str) -> dict:
             return dict(cur.fetchone())
 
 
-def save_conversation(user_id: str, conversation_id: str, messages: list, title: str = None) -> None:
+def save_conversation(
+    user_id: str,
+    conversation_id: str,
+    messages: list,
+    title: str = None,
+    openai_client: OpenAI = None
+) -> None:
     """Save or update a conversation (client.messages) to database"""
     if not title and messages:
-        # Use first user message as title
+        # Use LLM to generate a concise title from the first user message
         for msg in messages:
             if msg.get("role") == "user":
                 content = msg.get("content", "")
-                title = content[:50] + "..." if len(content) > 50 else content
+                title = generate_conversation_title(content, client=openai_client)
                 break
         title = title or "New conversation"
 

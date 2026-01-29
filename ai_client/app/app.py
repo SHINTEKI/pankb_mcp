@@ -8,7 +8,9 @@ import uuid
 from pathlib import Path
 
 import streamlit as st
+from openai import AsyncOpenAI, OpenAI
 from db import (
+    generate_conversation_title,
     get_conversation,
     get_or_create_user,
     get_user_conversations,
@@ -27,6 +29,18 @@ MCP_API_KEY = os.getenv("MCP_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 MODEL = os.getenv("OPENAI_MODEL")
 SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT")
+
+
+@st.cache_resource
+def get_async_openai_client() -> AsyncOpenAI:
+    """Get cached AsyncOpenAI client (shared across all sessions)"""
+    return AsyncOpenAI(api_key=OPENAI_API_KEY)
+
+
+@st.cache_resource
+def get_sync_openai_client() -> OpenAI:
+    """Get cached sync OpenAI client for title generation (shared across all sessions)"""
+    return OpenAI(api_key=OPENAI_API_KEY)
 
 # Page configuration
 st.set_page_config(
@@ -64,7 +78,7 @@ async def init_client():
     """Initialize and connect MCP client"""
     client = MCPClient(
         mcp_server_url=MCP_SERVER_URL,
-        openai_api_key=OPENAI_API_KEY,
+        openai_client=get_async_openai_client(),
         model=MODEL,
         auth=BearerAuth(token=MCP_API_KEY),
         system_prompt=SYSTEM_PROMPT
@@ -287,7 +301,8 @@ if prompt := st.chat_input("What species are in PanKB?"):
             save_conversation(
                 user_id=st.session_state.db_user["id"],
                 conversation_id=st.session_state.conversation_id,
-                messages=st.session_state.client.messages
+                messages=st.session_state.client.messages,
+                openai_client=get_sync_openai_client()
             )
         except Exception:
             pass

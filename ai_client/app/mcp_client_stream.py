@@ -24,22 +24,22 @@ class MCPClient:
     def __init__(
         self,
         mcp_server_url: str,
-        openai_api_key: str,
+        openai_client: AsyncOpenAI,
         model: str = "gpt-4o-mini",
         auth=None,
         system_prompt: str | None = None,
     ):
         if not mcp_server_url:
             raise ValueError("mcp_server_url is required")
-        if not openai_api_key:
-            raise ValueError("openai_api_key is required")
+        if not openai_client:
+            raise ValueError("openai_client is required")
         if not auth:
             raise ValueError("auth is required (use BearerAuth)")
 
         self.mcp_server_url = mcp_server_url
         self.model = model
         self.auth = auth
-        self.openai = AsyncOpenAI(api_key=openai_api_key)
+        self.openai = openai_client
         self.tools_cache: list[dict] = []
         self.messages: list[dict] = []
         self.system_prompt = system_prompt 
