@@ -1,0 +1,46 @@
+# Python bytecode (matches all levels)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Virtual environments (matches all levels)
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# Git
+.git/
+.github/
+.gitignore
+
+# Environment files - injected at runtime via env_file in docker-compose
+*.env
+.env*
+
+# Docker config files - not needed inside container
+*.Dockerfile
+docker-compose*.yaml
+docker-compose*.yml
+
+# Claude Code config
+.claude/
+
+# Logs - mounted at runtime via volumes in docker-compose
+logs/
+*.log
+
+# Documentation - not needed in container
+docs/
+*.md
+llm.txt
+tree.txt
+
+# OS files
+.DS_Store
+Thumbs.db
