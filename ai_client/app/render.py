@@ -223,6 +223,19 @@ def render_plotly_chart(chart_data: dict):
         st.text(chart_data)
 
 
+def render_url(url_data: dict):
+    """Render a URL link in a container (not collapsed)"""
+    title = url_data.get("title", "Link")
+    url = url_data.get("url", "")
+    description = url_data.get("description", "")
+
+    with st.container(border=True):
+        st.markdown(f"🔗 **{title}**")
+        if description:
+            st.caption(description)
+        st.markdown(f"[{url}]({url})")
+
+
 def render_table(table_data: dict):
     """Render a table from structured table data JSON"""
     title = table_data.get("title", "")
@@ -246,7 +259,19 @@ def render_table(table_data: dict):
     if summary:
         st.caption(summary)
 
-    st.dataframe(df, width="stretch", hide_index=True, key=f"dataframe_{uuid.uuid4()}")
+    # Check if there's a 'url' column - make it clickable
+    if "url" in df.columns:
+        st.dataframe(
+            df,
+            width="stretch",
+            hide_index=True,
+            key=f"dataframe_{uuid.uuid4()}",
+            column_config={
+                "url": st.column_config.LinkColumn("url")
+            }
+        )
+    else:
+        st.dataframe(df, width="stretch", hide_index=True, key=f"dataframe_{uuid.uuid4()}")
 
     st.download_button(
         "📥 CSV",
@@ -271,6 +296,9 @@ def render_tool_response(name: str, result: str, result_type: str | None, parsed
     elif result_type == "table" and parsed_data:
         with st.expander(f"Result: {name}", expanded=True):
             render_table(parsed_data)
+    elif result_type == "url" and parsed_data:
+        # URL type - render without expander/collapse
+        render_url(parsed_data)
     elif result_type == "string" and parsed_data:
         # Handle string type - check for markdown format
         with st.expander(f"Result: {name}", expanded=True):
