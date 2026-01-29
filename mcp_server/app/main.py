@@ -23,7 +23,7 @@ for module in ['mcp', 'httpx', 'httpcore', 'matplotlib', 'pymongo', 'azure', 'fa
     logging.getLogger(module).setLevel(logging.WARNING)
 
 from app.prompts.templates import mcp as templates_mcp
-from app.resources.data import mcp as data_mcp
+from app.resources.pankb import mcp as resources_mcp
 from app.tools.analysis import mcp as analysis_mcp
 
 # Import mcp instances from each module
@@ -60,7 +60,7 @@ mcp.mount(chart_mcp)
 mcp.mount(analysis_mcp)
 mcp.mount(query_mcp)
 mcp.mount(rag_mcp) 
-mcp.mount(data_mcp)
+mcp.mount(resources_mcp)
 mcp.mount(templates_mcp)
 
 
