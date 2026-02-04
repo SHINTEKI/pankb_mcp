@@ -11,10 +11,12 @@ services:
     shm_size: 128mb
     env_file:
       - .env
+    environment: 
+      - PGPORT=5433
     networks:
       - mcp-net
     ports:
-      - 5432:5432
+      - 5433:5433
     volumes:
       - ./docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d:ro
       - ./data:/var/lib/postgresql/data
