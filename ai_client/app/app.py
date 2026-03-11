@@ -273,7 +273,7 @@ async def process_chat(client: MCPClient, user_prompt: str, text_placeholder, to
 
 
 # User input
-if prompt := st.chat_input("What species are in PanKB?"):
+if prompt := st.chat_input("What species are included PanKB?"):
     display_prompt = prompt  # What user sees
     if st.session_state.get("literature_mode", False):
         user_prompt = f"[search_pangenome_literature] {prompt}"
