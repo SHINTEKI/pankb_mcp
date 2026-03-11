@@ -8,7 +8,6 @@ import uuid
 from pathlib import Path
 
 import streamlit as st
-from openai import AsyncOpenAI, OpenAI
 from db import (
     generate_conversation_title,
     get_conversation,
@@ -20,6 +19,7 @@ from db import (
 from dotenv import load_dotenv
 from fastmcp.client.auth import BearerAuth
 from mcp_client_stream import AgentEvent, MCPClient
+from openai import AsyncOpenAI, OpenAI
 from render import render_tool_call, render_tool_request, render_tool_response
 
 load_dotenv(Path(__file__).parent.parent / ".env")
@@ -148,42 +148,13 @@ def has_conversation():
         return False
     return any(m["role"] == "user" for m in st.session_state.client.messages)
 
-# Welcome message (only show if no conversation yet)
-if not has_conversation():
-    st.markdown("I can help you explore PanKB's pangenomic data. Here are the available tools:")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("""
-**🔍 Query Tools**
-| Tool | Description |
-|------|-------------|
-| `query_families` | List microbial families |
-| `query_species` | Search species/pangenomes |
-| `query_genomes` | Find genomes by species/country |
-| `query_genes` | Search genes by name/function |
-| `query_pathways` | Search KEGG pathways |
-| `query_stats` | Database statistics |
-        """)
-    with col2:
-        st.markdown("""
-**📈 Visualization Tools**
-| Tool | Description |
-|------|-------------|
-| `plot_gene_frequency_histogram` | U-shaped gene frequency curve |
-| `plot_pangenome_class_distribution` | Core/Accessory/Rare pie chart |
-| `plot_cog_category_distribution` | COG functional categories |
-| `plot_species_comparison` | Compare species in a family |
-| `plot_genome_count_by_family` | Genome counts bar chart |
-| `plot_gc_content_distribution` | GC content histogram |
-| `plot_geographic_distribution` | Genome locations by country |
-| `plot_isolation_source_distribution` | Sample sources pie chart |
-| `plot_phylogroup_distribution` | Phylogroup bar chart |
-| `plot_pangenome_openness` | Open/Closed pangenome status |
-| `plot_heaps_law` | Pangenome growth curve |
-| `plot_dn_ds_ratio` | Selection pressure distribution |
-        """)
 
-    st.markdown("---")
+st.markdown(
+    "🔍 **Query** families, species, genomes, genes &nbsp;·&nbsp; "
+    "🔗 **Navigate** to PanKB pages &nbsp;·&nbsp; "
+    "📊 **Visualize** pangenomic data &nbsp;·&nbsp; "
+    "📚 **Literature** search (toggle in sidebar)"
+)
 
 # Display conversation history from client.messages
 def render_conversation_history():
