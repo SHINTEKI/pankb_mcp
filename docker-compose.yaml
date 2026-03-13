@@ -42,7 +42,7 @@ services:
       - ./logs/client:/app/ai_client/app/logs  # Must be after app mount to override
     command:
       uv run streamlit run app.py --server.port 8503 --server.baseUrlPath=/copilot --server.enableCORS=false --server.enableXsrfProtection=false --server.runOnSave=true
-ulimits:
+    ulimits:
       nofile:
         soft: 65536
         hard: 65536
