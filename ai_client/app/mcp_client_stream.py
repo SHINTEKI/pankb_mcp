@@ -116,6 +116,8 @@ class MCPClient:
         """
         # Add user message to input
         self.messages.append({"role": "user", "content": user_message})
+        called_tools = False       # Track if any tool was called
+        is_literature = False       # Track if literature search was called
 
         while True:
             # Filter messages to only include valid API items
@@ -141,7 +143,8 @@ class MCPClient:
                 # Handle text output deltas (for streaming display)
                 if event.type == "response.output_text.delta":
                     full_content += event.delta
-                    yield AgentEvent(type="text", content=event.delta)
+                    if not called_tools or is_literature:
+                        yield AgentEvent(type="text", content=event.delta)
 
                 # Handle tool call output - extract complete function calls
                 elif event.type == "response.output_item.done":
@@ -230,6 +233,7 @@ class MCPClient:
 
                     # Add instruction for RAG tool results
                     if name == "search_pangenome_literature":
+                        is_literature = True
                         self.messages.append({
                             "role": "system",
                             "content": (
@@ -238,10 +242,12 @@ class MCPClient:
                                 "If the documents don't contain relevant information, say 'I don't have information about this in my knowledge base.'"
                             )
                         })
+
+                called_tools = True
                 continue
 
-            # No function calls - save content and done
-            if full_content:
+            # No function calls — AI is done (either final text or empty response)
+            if full_content and (not called_tools or is_literature):
                 self.messages.append({"role": "assistant", "content": full_content})
 
             # Yield usage event at the end of the response
