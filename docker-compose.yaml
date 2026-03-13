@@ -19,6 +19,10 @@ services:
     volumes:
       - ./mcp_server/app:/app/mcp_server/app  # Mount source code for hot-reload
       - ./logs/server:/app/mcp_server/logs
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     restart: no
 
   ai-client:
@@ -38,6 +42,10 @@ services:
       - ./logs/client:/app/ai_client/app/logs  # Must be after app mount to override
     command:
       uv run streamlit run app.py --server.port 8503 --server.baseUrlPath=/mcp --server.enableCORS=false --server.enableXsrfProtection=false --server.runOnSave=true
+ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     depends_on:
       - mcp-server
     restart: no
