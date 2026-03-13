@@ -108,25 +108,25 @@ def get_genome_url(genome_id: str) -> str:
     )
 
 
-@mcp.tool()
-def get_genome_gene_url(genome_id: str, gene: str) -> str:
-    """
-    Get the PanKB website URL for a specific gene within a specific genome.
-    Use this when user specifies BOTH genome ID and gene name.
+# @mcp.tool()
+# def get_genome_gene_url(genome_id: str, gene: str) -> str:
+#     """
+#     Get the PanKB website URL for a specific gene within a specific genome.
+#     Use this when user specifies BOTH genome ID and gene name.
 
-    Args:
-        genome_id: Specific genome ID (e.g., 'GCF_040629865.1')
-        gene: Gene name (e.g., 'COQ3_3', 'dnaA')
+#     Args:
+#         genome_id: Specific genome ID (e.g., 'GCF_040629865.1')
+#         gene: Gene name (e.g., 'COQ3_3', 'dnaA')
 
-    Returns:
-        URL to the genome-gene detail page on pankb.org
-    """
-    url = f"{PANKB_BASE_URL}/gene_function/genome_gene_info/?genome_id={genome_id}&gene={gene}"
-    return make_url_response(
-        title=f"Gene: {gene} in Genome: {genome_id}",
-        url=url,
-        description=f"Detailed information for gene {gene} in genome {genome_id}"
-    )
+#     Returns:
+#         URL to the genome-gene detail page on pankb.org
+#     """
+#     url = f"{PANKB_BASE_URL}/gene_function/genome_gene_info/?genome_id={genome_id}&gene={gene}"
+#     return make_url_response(
+#         title=f"Gene: {gene} in Genome: {genome_id}",
+#         url=url,
+#         description=f"Detailed information for gene {gene} in genome {genome_id}"
+#     )
     
     
 @mcp.tool()
