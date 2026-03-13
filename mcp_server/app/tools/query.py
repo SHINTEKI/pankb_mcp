@@ -3,15 +3,14 @@ Database Query Tools for PanKB MCP Server
 
 Data hierarchy: Family -> Species -> Genome -> Gene
 """
-from typing import List, Optional
-import logging
 import json
+import logging
+from typing import List, Optional
+
 import pandas as pd
-
-from fastmcp import FastMCP
-
 from app.config import Config
 from app.utils.connections import mongo_client
+from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +43,7 @@ def list_families(family: Optional[str] = None) -> str:
 
     match_stage = {}
     if family:
-        match_stage["family"] = {"$regex": family, "$options": "i"}
+        match_stage["family"] = {"$regex": f"^{family}$", "$options": "i"}
 
     pipeline = [
         {"$match": match_stage} if match_stage else {"$match": {}},
@@ -86,7 +85,7 @@ def list_species(
     family: Optional[str] = None,
     species: Optional[str] = None,
     pangenome_analysis: Optional[str] = None,
-    limit: int = 50
+    limit: Optional[int] = None
 ) -> str:
     """
     List species (pangenome analyses) in PanKB.
@@ -96,22 +95,25 @@ def list_species(
         family: Filter by family name
         species: Search by species name (case-insensitive)
         pangenome_analysis: Exact pangenome analysis name (e.g., 'Bacillus_subtilis')
-        limit: Maximum number of results (default: 50)
+        limit: Maximum number of results (default: None, returns all)
     """
     collection = mongo_client.get_collection(Config.MONGODB_COLLECTIONS["organisms"])
 
     query = {}
     if family:
-        query["family"] = {"$regex": family, "$options": "i"}
+        query["family"] = {"$regex": f"^{family}$", "$options": "i"}
     if species:
         # Normalize species name: replace spaces with underscores for regex search
         species_normalized = species.replace(" ", "_")
-        query["species"] = {"$regex": species_normalized, "$options": "i"}
+        query["species"] = {"$regex": f"^{species_normalized}$", "$options": "i"}
     if pangenome_analysis:
         # Normalize species name: replace spaces with underscores
         query["pangenome_analysis"] = pangenome_analysis.replace(" ", "_")
 
-    results = list(collection.find(query, {"_id": 0}).limit(limit))
+    cursor = collection.find(query, {"_id": 0})
+    if limit:
+        cursor = cursor.limit(limit)
+    results = list(cursor)
 
     if not results:
         return "No species found matching the criteria."
@@ -149,7 +151,7 @@ def list_genomes(
     genome_ids: Optional[List[str]] = None,
     country: Optional[str] = None,
     isolation_source: Optional[str] = None,
-    limit: int = 100
+    limit: Optional[int] = None
 ) -> str:
     """
     List genomes in PanKB.
@@ -160,7 +162,7 @@ def list_genomes(
         genome_ids: List of specific genome IDs to query
         country: Filter by isolation country
         isolation_source: Filter by isolation source (e.g., 'Soil', 'Blood')
-        limit: Maximum number of results (default: 100)
+        limit: Maximum number of results (default: None, returns all)
     """
     collection = mongo_client.get_collection(Config.MONGODB_COLLECTIONS["genome_info"])
 
@@ -187,12 +189,13 @@ def list_genomes(
     if country or isolation_source:
         isolation_filter = {}
         if country:
-            isolation_filter["isolation.country_standard"] = {"$regex": country, "$options": "i"}
+            isolation_filter["isolation.country_standard"] = {"$regex": f"^{country}$", "$options": "i"}
         if isolation_source:
-            isolation_filter["isolation.isolation_source"] = {"$regex": isolation_source, "$options": "i"}
+            isolation_filter["isolation.isolation_source"] = {"$regex": f"^{isolation_source}$", "$options": "i"}
         pipeline.append({"$match": isolation_filter})
 
-    pipeline.append({"$limit": limit})
+    if limit:
+        pipeline.append({"$limit": limit})
 
     results = list(collection.aggregate(pipeline))
 
@@ -229,7 +232,7 @@ def list_genes(
     pangenomic_class: Optional[str] = None,
     cog_category: Optional[str] = None,
     protein_search: Optional[str] = None,
-    limit: int = 100
+    limit: Optional[int] = None
 ) -> str:
     """
     List genes in PanKB.
@@ -245,7 +248,7 @@ def list_genes(
         pangenomic_class: Filter by pangenomic class ('Core', 'Accessory', or 'Rare')
         cog_category: Filter by COG category (e.g., 'K' for Transcription)
         protein_search: Search in protein descriptions (case-insensitive)
-        limit: Maximum number of results (default: 100)
+        limit: Maximum number of results (default: None, returns all)
     """
     collection = mongo_client.get_collection(Config.MONGODB_COLLECTIONS["gene_annotations"])
 
@@ -260,9 +263,12 @@ def list_genes(
     if cog_category:
         query["cog_category"] = cog_category
     if protein_search:
-        query["protein"] = {"$regex": protein_search, "$options": "i"}
+        query["protein"] = {"$regex": f"^{protein_search}$", "$options": "i"}
 
-    results = list(collection.find(query, {"_id": 0}).limit(limit))
+    cursor = collection.find(query, {"_id": 0})
+    if limit:
+        cursor = cursor.limit(limit)
+    results = list(cursor)
 
     if not results:
         return "No genes found matching the criteria."
@@ -288,42 +294,45 @@ def list_genes(
     )
 
 
-@mcp.tool()
-def list_pathways(
-    pathway_ids: Optional[List[str]] = None,
-    pathway_name_search: Optional[str] = None,
-    limit: int = 50
-) -> str:
-    """
-    List KEGG pathways in PanKB.
+# @mcp.tool()
+# def list_pathways(
+#     pathway_ids: Optional[List[str]] = None,
+#     pathway_name_search: Optional[str] = None,
+#     limit: Optional[int] = None
+# ) -> str:
+#     """
+#     List KEGG pathways in PanKB.
 
-    Args:
-        pathway_ids: KEGG pathway IDs (e.g., ['map00010', 'map00020'])
-        pathway_name_search: Search pathway names (case-insensitive)
-        limit: Maximum number of results (default: 50)
-    """
-    collection = mongo_client.get_collection(Config.MONGODB_COLLECTIONS["pathway_info"])
+#     Args:
+#         pathway_ids: KEGG pathway IDs (e.g., ['map00010', 'map00020'])
+#         pathway_name_search: Search pathway names (case-insensitive)
+#         limit: Maximum number of results (default: None, returns all)
+#     """
+#     collection = mongo_client.get_collection(Config.MONGODB_COLLECTIONS["pathway_info"])
 
-    query = {}
-    if pathway_ids:
-        query["pathway_id"] = {"$in": pathway_ids}
-    if pathway_name_search:
-        query["pathway_name"] = {"$regex": pathway_name_search, "$options": "i"}
+#     query = {}
+#     if pathway_ids:
+#         query["pathway_id"] = {"$in": pathway_ids}
+#     if pathway_name_search:
+#         query["pathway_name"] = {"$regex": f"^{pathway_name_search}$", "$options": "i"}
 
-    results = list(collection.find(query, {"_id": 0}).limit(limit))
+#     cursor = collection.find(query, {"_id": 0})
+#     if limit:
+#         cursor = cursor.limit(limit)
+#     results = list(cursor)
 
-    if not results:
-        return "No pathways found matching the criteria."
+#     if not results:
+#         return "No pathways found matching the criteria."
 
-    # Get column names from first result
-    columns = list(results[0].keys()) if results else []
+#     # Get column names from first result
+#     columns = list(results[0].keys()) if results else []
 
-    return make_table_response(
-        title="KEGG Pathways",
-        columns=columns,
-        rows=results,
-        summary=f"Found {len(results)} pathways"
-    )
+#     return make_table_response(
+#         title="KEGG Pathways",
+#         columns=columns,
+#         rows=results,
+#         summary=f"Found {len(results)} pathways"
+#     )
 
 
 @mcp.tool()
