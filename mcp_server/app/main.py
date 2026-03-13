@@ -22,13 +22,15 @@ logging.getLogger().addHandler(file_handler)
 for module in ['mcp', 'httpx', 'httpcore', 'matplotlib', 'pymongo', 'azure', 'fakeredis', 'docket']:
     logging.getLogger(module).setLevel(logging.WARNING)
 
-from app.prompts.templates import mcp as templates_mcp
-from app.resources.pankb import mcp as resources_mcp
-from app.tools.analysis import mcp as analysis_mcp
+# from app.prompts.templates import mcp as templates_mcp
+# from app.resources.pankb import mcp as resources_mcp
+# from app.tools.analysis import mcp as analysis_mcp
 from app.tools.chart import mcp as chart_mcp
 from app.tools.navigation import mcp as navigation_mcp
 from app.tools.query import mcp as query_mcp
 from app.tools.rag import mcp as rag_mcp
+
+# from app.tools.workflow import mcp as workflow_mcp
 
 # Bearer Token authentication for internal service communication
 # MCP_API_KEY is used by the Streamlit client to authenticate
@@ -56,12 +58,13 @@ mcp = FastMCP(
 
 # Mount sub-servers
 mcp.mount(chart_mcp)
-mcp.mount(analysis_mcp)
+# mcp.mount(analysis_mcp)
 mcp.mount(navigation_mcp)
 mcp.mount(query_mcp)
 mcp.mount(rag_mcp)
-mcp.mount(resources_mcp)
-mcp.mount(templates_mcp)
+# mcp.mount(resources_mcp)
+# mcp.mount(templates_mcp)
+# mcp.mount(workflow_mcp)
 
 
 # Create HTTP app (module level, supports uvicorn --reload)
