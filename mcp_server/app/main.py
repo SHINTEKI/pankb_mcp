@@ -3,7 +3,6 @@ import os
 
 from dotenv import load_dotenv
 from fastmcp import FastMCP
-from fastmcp.server.auth import StaticTokenVerifier
 from fastmcp.utilities.logging import configure_logging
 
 load_dotenv()
@@ -35,17 +34,20 @@ from app.tools.rag import mcp as rag_mcp
 # Bearer Token authentication for internal service communication
 # MCP_API_KEY is used by the Streamlit client to authenticate
 MCP_API_KEY = os.getenv("MCP_API_KEY", "")
+# Set REQUIRE_AUTH=false to disable authentication (e.g. for Claude Desktop)
+REQUIRE_AUTH = os.getenv("REQUIRE_AUTH", "true").lower() == "true"
 
-# Create token verifier with the API key
-# The token maps to client metadata (client_id, scopes)
-token_auth = StaticTokenVerifier(
-    tokens={
-        MCP_API_KEY: {
-            "client_id": "streamlit-client",
-            "scopes": ["read", "write"],
+token_auth = None
+if MCP_API_KEY and REQUIRE_AUTH:
+    from fastmcp.server.auth import StaticTokenVerifier
+    token_auth = StaticTokenVerifier(
+        tokens={
+            MCP_API_KEY: {
+                "client_id": "streamlit-client",
+                "scopes": ["read", "write"],
+            }
         }
-    }
-)
+    )
 
 logger = logging.getLogger(__name__)
 
