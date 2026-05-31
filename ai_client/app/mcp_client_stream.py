@@ -114,7 +114,8 @@ class MCPClient:
         # Add user message to input
         self.messages.append({"role": "user", "content": user_message})
 
-        while True:
+        max_iterations = 5
+        for iteration in range(max_iterations):
             # Filter messages to only include valid API items
             api_input = self._filter_messages_for_api()
 
