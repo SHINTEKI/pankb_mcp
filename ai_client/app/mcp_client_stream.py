@@ -109,6 +109,33 @@ class MCPClient:
                         result_type, parsed_data = self._parse_result(result_str)
                 span.set_attribute("tool.result_type", result_type or "text")
                 span.set_attribute("tool.result_chars", len(result_str))
+
+                # Per-result-type metadata so Phoenix shows what actually came back,
+                # not just "12453 chars of something". Keep payloads small.
+                if result_type == "chart" and parsed_data:
+                    span.set_attribute("tool.chart.title", parsed_data.get("title", ""))
+                    series = parsed_data.get("data", []) or []
+                    span.set_attribute("tool.chart.series_count", len(series))
+                    span.set_attribute(
+                        "tool.chart.series_types",
+                        json.dumps([s.get("type", "?") for s in series][:20]),
+                    )
+                elif result_type == "table" and parsed_data:
+                    span.set_attribute("tool.table.title", parsed_data.get("title", ""))
+                    span.set_attribute(
+                        "tool.table.row_count",
+                        parsed_data.get("row_count", len(parsed_data.get("rows", []) or [])),
+                    )
+                elif result_type == "url" and parsed_data:
+                    span.set_attribute("tool.url.title", parsed_data.get("title", ""))
+                    span.set_attribute("tool.url.value", parsed_data.get("url", ""))
+                elif name == "search_pangenome_literature" and result_str:
+                    # RAG returns markdown with "### Document N:" per chunk. Count +
+                    # preview is enough to debug "did we retrieve anything reasonable?"
+                    # without dumping the full payload.
+                    span.set_attribute("rag.chunk_count", result_str.count("### Document "))
+                    span.set_attribute("rag.documents_markdown", result_str)
+
                 return result_str, result_type, parsed_data
             except Exception as e:
                 span.record_exception(e)
