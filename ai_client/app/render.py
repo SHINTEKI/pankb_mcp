@@ -79,7 +79,8 @@ def render_plotly_chart(chart_data: dict):
             fig = go.Figure(go.Bar(
                 x=data.get("x", []),
                 y=data.get("y", []),
-                marker_color=layout_config.get("color", "steelblue")
+                marker_color=layout_config.get("color", "#4a90d9"),
+                marker_line_width=0
             ))
             if layout_config.get("yaxis_type") == "log":
                 fig.update_yaxes(type="log")
@@ -89,7 +90,7 @@ def render_plotly_chart(chart_data: dict):
                 x=data.get("x", []),
                 y=data.get("y", []),
                 orientation='h',
-                marker_color=layout_config.get("color", "steelblue")
+                marker_color=layout_config.get("color", "#4a90d9")
             ))
 
         elif chart_type == "bar_stacked":
@@ -139,7 +140,7 @@ def render_plotly_chart(chart_data: dict):
             fig = go.Figure(go.Histogram(
                 x=data.get("values", []),
                 nbinsx=layout_config.get("nbins", 30),
-                marker_color=layout_config.get("color", "steelblue")
+                marker_color=layout_config.get("color", "#4a90d9")
             ))
             vline = layout_config.get("vline")
             if vline:
@@ -174,7 +175,7 @@ def render_plotly_chart(chart_data: dict):
                 x=data.get("x", []),
                 y=data.get("y", []),
                 mode='lines',
-                line=dict(color=layout_config.get("color", "steelblue"), width=2, shape='hv')
+                line=dict(color=layout_config.get("color", "#4a90d9"), width=2, shape='hv')
             ))
 
         elif chart_type == "heatmap":

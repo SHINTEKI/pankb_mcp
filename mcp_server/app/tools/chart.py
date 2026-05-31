@@ -91,7 +91,7 @@ def plot_gene_frequency_histogram(pangenome_analysis: str):
         layout={
             "yaxis_type": "log",
             "bargap": 0,
-            "color": "steelblue"
+            "color": "#4a90d9"
         }
     )
 
@@ -143,14 +143,14 @@ def plot_pangenome_class_distribution(pangenome_analysis: str):
 
 
 @mcp.tool()
-def plot_cog_category_distribution(pangenome_analysis: str, top_n: int = 15):
+def plot_cog_category_distribution(pangenome_analysis: str, top_n: Optional[int] = None):
     """
     Generate bar chart showing COG functional category distribution for a species.
     Returns Plotly-compatible JSON data for interactive visualization.
 
     Args:
         pangenome_analysis: Species pangenome analysis name
-        top_n: Number of top categories to show (default: 15)
+        top_n: Optional: limit number of categories shown (default: show all)
     """
     # Normalize species name: replace spaces with underscores
     pangenome_analysis = pangenome_analysis.replace(" ", "_")
@@ -161,8 +161,9 @@ def plot_cog_category_distribution(pangenome_analysis: str, top_n: int = 15):
         {"$match": {"pangenome_analysis": pangenome_analysis}},
         {"$group": {"_id": "$cog_category", "count": {"$sum": 1}}},
         {"$sort": {"count": -1}},
-        {"$limit": top_n}
     ]
+    if top_n:
+        pipeline.append({"$limit": top_n})
     results = list(collection.aggregate(pipeline))
 
     if not results:
@@ -181,27 +182,30 @@ def plot_cog_category_distribution(pangenome_analysis: str, top_n: int = 15):
             "labels": {"x": "Number of Genes", "y": "COG Category"}
         },
         layout={
-            "color": "viridis"
+            "color": "#4a90d9"
         }
     )
 
 
 @mcp.tool()
-def plot_species_comparison(family: str, top_n: int = 10):
+def plot_species_comparison(family: str, top_n: Optional[int] = None):
     """
     Generate stacked bar chart comparing Core/Accessory/Rare genes across species in a family.
     Returns Plotly-compatible JSON data for interactive visualization.
 
     Args:
         family: Family name to compare species (e.g., 'Bacillaceae')
-        top_n: Number of top species to show (default: 10)
+        top_n: Optional: limit number of species shown (default: show all)
     """
     collection = mongo_client.get_collection(Config.MONGODB_COLLECTIONS["organisms"])
 
-    results = list(collection.find(
+    query = collection.find(
         {"family": {"$regex": family, "$options": "i"}},
         {"species": 1, "gene_class_distribution": 1, "genomes_num": 1}
-    ).sort("genomes_num", -1).limit(top_n))
+    ).sort("genomes_num", -1)
+    if top_n:
+        query = query.limit(top_n)
+    results = list(query)
 
     if not results:
         return f"No species found for family: {family}"
@@ -240,14 +244,14 @@ def plot_species_comparison(family: str, top_n: int = 10):
 
 
 @mcp.tool()
-def plot_genome_count_by_family(family: Optional[str] = None, top_n: int = 15):
+def plot_genome_count_by_family(family: Optional[str] = None, top_n: Optional[int] = None):
     """
     Generate bar chart showing genome counts across families or species.
     Returns Plotly-compatible JSON data for interactive visualization.
 
     Args:
         family: Optional: filter by family name to show species within
-        top_n: Number of top entries to show (default: 15)
+        top_n: Optional: limit number of entries shown (default: show all)
     """
     collection = mongo_client.get_collection(Config.MONGODB_COLLECTIONS["organisms"])
 
@@ -255,17 +259,19 @@ def plot_genome_count_by_family(family: Optional[str] = None, top_n: int = 15):
         pipeline = [
             {"$match": {"family": {"$regex": family, "$options": "i"}}},
             {"$sort": {"genomes_num": -1}},
-            {"$limit": top_n},
-            {"$project": {"name": "$species", "count": "$genomes_num"}}
         ]
+        if top_n:
+            pipeline.append({"$limit": top_n})
+        pipeline.append({"$project": {"name": "$species", "count": "$genomes_num"}})
         title = f"Genome Count by Species - Family: {family}"
     else:
         pipeline = [
             {"$group": {"_id": "$family", "count": {"$sum": "$genomes_num"}}},
             {"$sort": {"count": -1}},
-            {"$limit": top_n},
-            {"$project": {"name": "$_id", "count": 1}}
         ]
+        if top_n:
+            pipeline.append({"$limit": top_n})
+        pipeline.append({"$project": {"name": "$_id", "count": 1}})
         title = "Genome Count by Family"
 
     results = list(collection.aggregate(pipeline))
@@ -285,7 +291,7 @@ def plot_genome_count_by_family(family: Optional[str] = None, top_n: int = 15):
             "labels": {"x": "Number of Genomes", "y": ""}
         },
         layout={
-            "color": "steelblue"
+            "color": "#4a90d9"
         }
     )
 
@@ -329,21 +335,21 @@ def plot_gc_content_distribution(pangenome_analysis: str):
         },
         layout={
             "nbins": 30,
-            "color": "steelblue",
+            "color": "#4a90d9",
             "vline": {"x": mean_gc, "color": "red", "label": f"Mean: {mean_gc:.2f}%"}
         }
     )
 
 
 @mcp.tool()
-def plot_geographic_distribution(pangenome_analysis: Optional[str] = None, top_n: int = 20):
+def plot_geographic_distribution(pangenome_analysis: Optional[str] = None, top_n: Optional[int] = None):
     """
     Generate bar chart showing geographic distribution of genomes by country.
     Returns Plotly-compatible JSON data for interactive visualization.
 
     Args:
         pangenome_analysis: Optional: filter by species pangenome analysis name
-        top_n: Number of top countries to show (default: 20)
+        top_n: Optional: limit number of countries shown (default: show all)
     """
     # Normalize species name: replace spaces with underscores
     if pangenome_analysis:
@@ -362,21 +368,23 @@ def plot_geographic_distribution(pangenome_analysis: Optional[str] = None, top_n
                 }
             },
             {"$unwind": {"path": "$isolation", "preserveNullAndEmptyArrays": False}},
-            {"$group": {"_id": "$isolation.country_standard", "count": {"$sum": 1}}},
-            {"$match": {"_id": {"$ne": None, "$ne": "missing", "$ne": "Missing"}}},
+            {"$group": {"_id": "$isolation.country", "count": {"$sum": 1}}},
+            {"$match": {"_id": {"$nin": [None, "", "?", "missing", "Missing", "Unknown", "unknown"]}}},
             {"$sort": {"count": -1}},
-            {"$limit": top_n}
         ]
+        if top_n:
+            pipeline.append({"$limit": top_n})
         results = list(genome_collection.aggregate(pipeline))
         title = f"Geographic Distribution - {pangenome_analysis.replace('_', ' ')}"
     else:
         collection = mongo_client.get_collection(Config.MONGODB_COLLECTIONS["isolation_info"])
         pipeline = [
-            {"$group": {"_id": "$country_standard", "count": {"$sum": 1}}},
-            {"$match": {"_id": {"$ne": None, "$ne": "missing", "$ne": "Missing"}}},
+            {"$group": {"_id": "$country", "count": {"$sum": 1}}},
+            {"$match": {"_id": {"$nin": [None, "", "?", "missing", "Missing", "Unknown", "unknown"]}}},
             {"$sort": {"count": -1}},
-            {"$limit": top_n}
         ]
+        if top_n:
+            pipeline.append({"$limit": top_n})
         results = list(collection.aggregate(pipeline))
         title = "Geographic Distribution of Genomes"
 
@@ -395,20 +403,20 @@ def plot_geographic_distribution(pangenome_analysis: Optional[str] = None, top_n
             "labels": {"x": "Number of Genomes", "y": "Country"}
         },
         layout={
-            "color": "Blues"
+            "color": "#4a90d9"
         }
     )
 
 
 @mcp.tool()
-def plot_isolation_source_distribution(pangenome_analysis: Optional[str] = None, top_n: int = 10):
+def plot_isolation_source_distribution(pangenome_analysis: Optional[str] = None, top_n: Optional[int] = None):
     """
     Generate pie chart showing distribution of isolation sources for genomes.
     Returns Plotly-compatible JSON data for interactive visualization.
 
     Args:
         pangenome_analysis: Optional: filter by species pangenome analysis name
-        top_n: Number of top sources to show (default: 10)
+        top_n: Optional: limit number of sources shown (default: show all)
     """
     # Normalize species name: replace spaces with underscores
     if pangenome_analysis:
@@ -430,8 +438,9 @@ def plot_isolation_source_distribution(pangenome_analysis: Optional[str] = None,
             {"$group": {"_id": "$isolation.isolation_source", "count": {"$sum": 1}}},
             {"$match": {"_id": {"$nin": [None, "Missing", "missing", "", "-", "Not available", "not available"]}}},
             {"$sort": {"count": -1}},
-            {"$limit": top_n}
         ]
+        if top_n:
+            pipeline.append({"$limit": top_n})
         results = list(genome_collection.aggregate(pipeline))
         title = f"Isolation Source Distribution - {pangenome_analysis.replace('_', ' ')}"
     else:
@@ -440,16 +449,25 @@ def plot_isolation_source_distribution(pangenome_analysis: Optional[str] = None,
             {"$group": {"_id": "$isolation_source", "count": {"$sum": 1}}},
             {"$match": {"_id": {"$nin": [None, "Missing", "missing", "", "-", "Not available", "not available"]}}},
             {"$sort": {"count": -1}},
-            {"$limit": top_n}
         ]
+        if top_n:
+            pipeline.append({"$limit": top_n})
         results = list(collection.aggregate(pipeline))
         title = "Isolation Source Distribution"
 
     if not results:
         return "No isolation source data found"
 
-    sources = [r["_id"] if r["_id"] else "Unknown" for r in results]
-    counts = [r["count"] for r in results]
+    # Default to top 10 for pie chart readability, group the rest as "Other"
+    display_n = top_n if top_n else 10
+    if len(results) > display_n:
+        top_results = results[:display_n]
+        other_count = sum(r["count"] for r in results[display_n:])
+        sources = [r["_id"] if r["_id"] else "Unknown" for r in top_results] + ["Other"]
+        counts = [r["count"] for r in top_results] + [other_count]
+    else:
+        sources = [r["_id"] if r["_id"] else "Unknown" for r in results]
+        counts = [r["count"] for r in results]
 
     return make_chart_response(
         chart_type="pie",
@@ -499,20 +517,20 @@ def plot_phylogroup_distribution(pangenome_analysis: str):
             "labels": {"x": "Phylogroup", "y": "Number of Genomes"}
         },
         layout={
-            "color": "tab10"
+            "color": "#4a90d9"
         }
     )
 
 
 @mcp.tool()
-def plot_pangenome_openness(family: Optional[str] = None, top_n: int = 20):
+def plot_pangenome_openness(family: Optional[str] = None, top_n: Optional[int] = None):
     """
     Generate chart comparing pangenome openness (Open/Closed) across species.
     Returns Plotly-compatible JSON data for interactive visualization.
 
     Args:
         family: Optional: filter by family name
-        top_n: Number of species to show (default: 20)
+        top_n: Optional: limit number of species shown (default: show all)
     """
     collection = mongo_client.get_collection(Config.MONGODB_COLLECTIONS["organisms"])
 
@@ -520,10 +538,13 @@ def plot_pangenome_openness(family: Optional[str] = None, top_n: int = 20):
     if family:
         query["family"] = {"$regex": family, "$options": "i"}
 
-    results = list(collection.find(
+    cursor = collection.find(
         query,
         {"species": 1, "openness": 1, "genomes_num": 1}
-    ).sort("genomes_num", -1).limit(top_n))
+    ).sort("genomes_num", -1)
+    if top_n:
+        cursor = cursor.limit(top_n)
+    results = list(cursor)
 
     if not results:
         return "No species data found"
@@ -774,7 +795,7 @@ def plot_gene_frequency_curve(species: str):
             }
         },
         layout={
-            "color": "steelblue",
+            "color": "#4a90d9",
             "bargap": 0,
             "vlines": vlines
         }
@@ -908,7 +929,7 @@ def plot_gene_presence_absence_matrix(
     )
 
 
-@mcp.tool()
+# @mcp.tool()
 def get_phylogenetic_tree(species: str):
     """
     Get phylogenetic tree information for a species.
@@ -1020,13 +1041,13 @@ def plot_dn_ds_ratio(species: str):
         },
         layout={
             "nbins": 50,
-            "color": "steelblue",
+            "color": "#4a90d9",
             "vline": {"x": 1, "color": "red", "label": "Neutral (dN/dS = 1)"}
         }
     )
 
 
-@mcp.tool()
+# @mcp.tool()
 def plot_variant_dominant_frequency(species: str):
     """
     Plot variant dominant frequency from panalleleome analysis.
@@ -1064,6 +1085,6 @@ def plot_variant_dominant_frequency(species: str):
             "labels": {"x": "Dominant Variant Frequency", "y": "Number of Genes"}
         },
         layout={
-            "color": "steelblue"
+            "color": "#4a90d9"
         }
     )
