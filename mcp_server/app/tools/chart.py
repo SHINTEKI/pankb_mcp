@@ -11,10 +11,8 @@ import re
 from collections import Counter
 from typing import Literal, Optional
 
-import plotly.graph_objects as go
 import requests
 from fastmcp import FastMCP
-from fastmcp.utilities.types import Image
 
 from app.config import Config
 from app.utils.connections import blob_client, mongo_client
@@ -38,148 +36,18 @@ COG_NAMES = {
 }
 
 
-def _build_plotly_figure(chart_type: str, title: str, data: dict, layout_config: dict) -> go.Figure:
-    """Build a Plotly figure from chart data"""
-    fig = None
-
-    if chart_type == "bar":
-        fig = go.Figure(go.Bar(
-            x=data.get("x", []),
-            y=data.get("y", []),
-            marker_color=layout_config.get("color", "steelblue")
-        ))
-        if layout_config.get("yaxis_type") == "log":
-            fig.update_yaxes(type="log")
-
-    elif chart_type == "bar_horizontal":
-        fig = go.Figure(go.Bar(
-            x=data.get("x", []),
-            y=data.get("y", []),
-            orientation='h',
-            marker_color=layout_config.get("color", "steelblue")
-        ))
-
-    elif chart_type == "bar_stacked":
-        fig = go.Figure()
-        for series in data.get("series", []):
-            fig.add_trace(go.Bar(
-                name=series.get("name", ""),
-                x=data.get("x", []),
-                y=series.get("values", []),
-                marker_color=series.get("color")
-            ))
-        fig.update_layout(barmode='stack')
-
-    elif chart_type == "bar_grouped":
-        fig = go.Figure()
-        for series in data.get("series", []):
-            fig.add_trace(go.Bar(
-                name=series.get("name", ""),
-                x=data.get("x", []),
-                y=series.get("values", []),
-                marker_color=series.get("color")
-            ))
-        fig.update_layout(barmode='group')
-
-    elif chart_type == "pie":
-        fig = go.Figure(go.Pie(
-            labels=data.get("labels", []),
-            values=data.get("values", []),
-            marker_colors=data.get("colors") if data.get("colors") else None
-        ))
-
-    elif chart_type == "histogram":
-        fig = go.Figure(go.Histogram(
-            x=data.get("values", []),
-            nbinsx=layout_config.get("nbins", 30),
-            marker_color=layout_config.get("color", "steelblue")
-        ))
-
-    elif chart_type == "line":
-        fig = go.Figure(go.Scatter(
-            x=data.get("x", []),
-            y=data.get("y", []),
-            mode='lines',
-            line=dict(color=layout_config.get("color", "blue"), width=2)
-        ))
-
-    elif chart_type == "line_multi":
-        fig = go.Figure()
-        for series in data.get("series", []):
-            fig.add_trace(go.Scatter(
-                x=data.get("x", []),
-                y=series.get("values", []),
-                mode='lines',
-                name=series.get("name", ""),
-                line=dict(color=series.get("color"), width=2)
-            ))
-
-    elif chart_type == "heatmap":
-        fig = go.Figure(go.Heatmap(
-            z=data.get("z", []),
-            x=data.get("x", []),
-            y=data.get("y", []),
-            colorscale=layout_config.get("colorscale", "YlOrRd")
-        ))
-
-    if fig:
-        labels = data.get("labels", {})
-        if isinstance(labels, dict):
-            fig.update_layout(
-                title=title,
-                xaxis_title=labels.get("x", ""),
-                yaxis_title=labels.get("y", ""),
-                template="plotly_white"
-            )
-        else:
-            fig.update_layout(title=title, template="plotly_white")
-
-    return fig
-
-
-def _generate_image_bytes(fig: go.Figure, width: int = 800, height: int = 600) -> bytes | None:
-    """Generate PNG image bytes from Plotly figure"""
-    if fig is None:
-        return None
-    try:
-        return fig.to_image(format="png", width=width, height=height, scale=1)
-    except Exception as e:
-        logger.warning(f"Failed to generate image: {e}")
-        return None
-
-
-def make_chart_response(chart_type: str, title: str, data: dict, layout: dict = None) -> list:
+def make_chart_response(chart_type: str, title: str, data: dict, layout: dict = None) -> str:
     """
-    Create a chart response with both MCP Image and JSON data.
-
-    Returns a list containing:
-    - Image: MCP standard image for AI clients (Claude Desktop, etc.)
-    - str: JSON data for custom clients that can render interactive Plotly charts
+    Create a chart response as JSON data points for client-side rendering.
+    The client rebuilds the Plotly figure from these fields.
     """
-    layout_config = layout or {}
-
-    # Build Plotly figure and generate image
-    fig = _build_plotly_figure(chart_type, title, data, layout_config)
-    img_bytes = _generate_image_bytes(fig)
-
-    # JSON data for clients that support interactive rendering
-    json_data = json.dumps({
+    return json.dumps({
         "type": "chart",
         "chart_type": chart_type,
         "title": title,
         "data": data,
-        "layout": layout_config
+        "layout": layout or {}
     })
-
-    # Return both: Image for standard MCP clients, JSON for custom clients
-    if img_bytes:
-        return [
-            Image(data=img_bytes, format="png"),
-            json_data
-        ]
-    else:
-        # Fallback to JSON only if image generation fails
-        return json_data
 
 
 mcp = FastMCP(name="ChartTools")

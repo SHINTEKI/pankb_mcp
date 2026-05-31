@@ -79,16 +79,16 @@ class MCPClient:
             pass
         return None, None
 
-    async def _call_tool(self, name: str, args: dict) -> tuple[str, str | None, dict | None, str | None]:
+    async def _call_tool(self, name: str, args: dict) -> tuple[str, str | None, dict | None]:
         """
-        Call MCP tool and return (result_str, result_type, parsed_data, image_base64)
+        Call MCP tool and return (result_str, result_type, parsed_data).
+        Charts are returned as JSON data points; the frontend renders them with Plotly.
         """
         try:
             async with self._create_mcp_client() as client:
                 result = await client.call_tool(name, args)
 
                 result_str = ""
-                image_base64 = None
                 result_type = None
                 parsed_data = None
 
@@ -96,13 +96,10 @@ class MCPClient:
                     if hasattr(content, "text"):
                         result_str = content.text
                         result_type, parsed_data = self._parse_result(result_str)
-                    elif hasattr(content, "data") and hasattr(content, "mimeType"):
-                        if content.mimeType.startswith("image/"):
-                            image_base64 = content.data
 
-                return result_str, result_type, parsed_data, image_base64
+                return result_str, result_type, parsed_data
         except Exception as e:
-            return f"Error: {e}", None, None, None
+            return f"Error: {e}", None, None
 
     async def chat(self, user_message: str) -> AsyncGenerator[AgentEvent, None]:
         """
@@ -182,10 +179,7 @@ class MCPClient:
 
                     yield AgentEvent(type="tool_start", tool_name=name, tool_args=args)
 
-                    result_str, result_type, parsed_data, image_base64 = await self._call_tool(name, args)
-
-                    if parsed_data and image_base64:
-                        parsed_data["image_base64"] = image_base64
+                    result_str, result_type, parsed_data = await self._call_tool(name, args)
 
                     yield AgentEvent(
                         type="tool_result",
@@ -197,7 +191,7 @@ class MCPClient:
                     )
 
                     # Prepare content for LLM
-                    if result_type == "chart" and image_base64:
+                    if result_type == "chart" and parsed_data:
                         llm_content = (
                             f"[Chart rendered successfully: {parsed_data.get('title', 'Untitled')}]\n"
                             "The interactive chart is already visible to the user above. "
