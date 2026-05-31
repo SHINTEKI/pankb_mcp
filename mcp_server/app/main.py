@@ -60,13 +60,11 @@ mcp = FastMCP(
 
 # Mount sub-servers
 mcp.mount(chart_mcp)
-# mcp.mount(analysis_mcp)
 mcp.mount(navigation_mcp)
 mcp.mount(query_mcp)
 mcp.mount(rag_mcp)
 # mcp.mount(resources_mcp)
 # mcp.mount(templates_mcp)
-# mcp.mount(workflow_mcp)
 
 
 # Create HTTP app (module level, supports uvicorn --reload)
