@@ -37,6 +37,9 @@ services:
       - "8503:8503"
     env_file:
       - ./ai_client/.env
+    environment:
+      PHOENIX_COLLECTOR_ENDPOINT: "http://phoenix:6006"
+      PHOENIX_PROJECT_NAME: "pankb-agent"
     volumes:
       - ./ai_client/app:/app/ai_client/app  # Mount source code for hot-reload
       - ./logs/client:/app/ai_client/app/logs  # Must be after app mount to override
@@ -48,4 +51,20 @@ services:
         hard: 65536
     depends_on:
       - mcp-server
+      - phoenix
     restart: no
+
+  phoenix:
+    container_name: phoenix
+    image: arizephoenix/phoenix:latest
+    networks:
+      - mcp-net
+    ports:
+      - "6006:6006"
+      - "4317:4317"
+    restart: no
+    volumes:
+      - phoenix_data:/root/.phoenix
+
+volumes:
+  phoenix_data:

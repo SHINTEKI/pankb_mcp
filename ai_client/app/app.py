@@ -21,8 +21,11 @@ from fastmcp.client.auth import BearerAuth
 from mcp_client_stream import AgentEvent, MCPClient
 from openai import AsyncOpenAI, OpenAI
 from render import render_tool_call, render_tool_request, render_tool_response
+from tracing import init_tracing
 
 load_dotenv(Path(__file__).parent.parent / ".env")
+
+init_tracing()
 
 # Configuration
 MCP_SERVER_URL = os.getenv("MCP_SERVER_URL")
@@ -206,13 +209,20 @@ def render_conversation_history():
 render_conversation_history()
 
 # Process chat with streaming updates
-async def process_chat(client: MCPClient, user_prompt: str, text_placeholder, tool_container):
+async def process_chat(
+    client: MCPClient,
+    user_prompt: str,
+    text_placeholder,
+    tool_container,
+    session_id: str,
+    user_id: str | None,
+):
     """Process chat and update UI. Returns (llm_text, tool_calls, usage)"""
     llm_text = ""
     tool_calls = []
     usage = None
 
-    async for event in client.chat(user_prompt):
+    async for event in client.chat(user_prompt, session_id=session_id, user_id=user_id):
         if event.type == "tool_start":
             with tool_container:
                 render_tool_request(event.tool_name, event.tool_args)
@@ -265,7 +275,9 @@ if prompt := st.chat_input("What species are included in PanKB?"):
                 st.session_state.client,
                 user_prompt,
                 text_placeholder,
-                tool_container
+                tool_container,
+                session_id=st.session_state.conversation_id,
+                user_id=st.user.email,
             )
         )
 
