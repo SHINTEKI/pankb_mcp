@@ -2,10 +2,11 @@
 Database utilities for user management and chat history
 """
 import os
-import psycopg2
-from psycopg2.extras import RealDictCursor, Json
 from contextlib import contextmanager
+
+import psycopg2
 from openai import OpenAI
+from psycopg2.extras import Json, RealDictCursor
 
 
 def generate_conversation_title(
@@ -37,7 +38,6 @@ def generate_conversation_title(
                         "Generate a very short title (max 6 words, under 30 characters) for this conversation. "
                         "The title should capture the main topic or intent. "
                         "Do NOT use quotes or punctuation. Just output the title directly. "
-                        "Examples: 'Bacillus物种查询', 'Gene频率分析', '泛基因组文献搜索'"
                     )
                 },
                 {"role": "user", "content": first_message}
