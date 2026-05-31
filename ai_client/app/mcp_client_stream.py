@@ -1,6 +1,7 @@
 """
 MCP Client: Connect to MCP Server, convert tools to OpenAI function calling format, and handle streaming chat with tool calls.
 """
+import asyncio
 import json
 from dataclasses import dataclass
 from typing import AsyncGenerator
@@ -79,25 +80,21 @@ class MCPClient:
             pass
         return None, None
 
-    async def _call_tool(self, name: str, args: dict) -> tuple[str, str | None, dict | None]:
+    async def _call_tool(self, client: Client, name: str, args: dict) -> tuple[str, str | None, dict | None]:
         """
-        Call MCP tool and return (result_str, result_type, parsed_data).
-        Charts are returned as JSON data points; the frontend renders them with Plotly.
+        Call MCP tool on an already-connected client and return
+        (result_str, result_type, parsed_data).
         """
         try:
-            async with self._create_mcp_client() as client:
-                result = await client.call_tool(name, args)
-
-                result_str = ""
-                result_type = None
-                parsed_data = None
-
-                for content in result.content:
-                    if hasattr(content, "text"):
-                        result_str = content.text
-                        result_type, parsed_data = self._parse_result(result_str)
-
-                return result_str, result_type, parsed_data
+            result = await client.call_tool(name, args)
+            result_str = ""
+            result_type = None
+            parsed_data = None
+            for content in result.content:
+                if hasattr(content, "text"):
+                    result_str = content.text
+                    result_type, parsed_data = self._parse_result(result_str)
+            return result_str, result_type, parsed_data
         except Exception as e:
             return f"Error: {e}", None, None
 
@@ -170,15 +167,19 @@ class MCPClient:
                         "arguments": fc["arguments"]
                     })
 
-                # Execute each function
-                for fc in function_calls:
+                # Open MCP session once and run all tool calls in parallel.
+                parsed_args = [json.loads(fc["arguments"]) if fc["arguments"] else {} for fc in function_calls]
+                for fc, args in zip(function_calls, parsed_args):
+                    yield AgentEvent(type="tool_start", tool_name=fc["name"], tool_args=args)
+                async with self._create_mcp_client() as mcp:
+                    tool_results = await asyncio.gather(*[
+                        self._call_tool(mcp, fc["name"], args)
+                        for fc, args in zip(function_calls, parsed_args)
+                    ])
+
+                # Process each result in original call order
+                for fc, args, (result_str, result_type, parsed_data) in zip(function_calls, parsed_args, tool_results):
                     name = fc["name"]
-                    args = json.loads(fc["arguments"]) if fc["arguments"] else {}
-
-                    yield AgentEvent(type="tool_start", tool_name=name, tool_args=args)
-
-                    result_str, result_type, parsed_data = await self._call_tool(name, args)
-
                     yield AgentEvent(
                         type="tool_result",
                         content=result_str,
