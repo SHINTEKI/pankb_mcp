@@ -278,8 +278,6 @@ class MCPClient:
                                 llm_content = (
                                     f"[Chart rendered successfully: {parsed_data.get('title', 'Untitled')}]\n"
                                     "The interactive chart is already visible to the user above. "
-                                    "Describe the key patterns or insights from this visualization in plain text. "
-                                    "NEVER use markdown image syntax like ![...](...) in your response."
                                 )
                             elif result_type == "table" and parsed_data:
                                 row_count = parsed_data.get("row_count", len(parsed_data.get("rows", [])))
@@ -331,6 +329,7 @@ class MCPClient:
                         final_output = full_content
 
                     # Yield usage event at the end of the response
+                    # We only recorded the final round of token usage here, but token captured by phoenix is correct
                     if usage_info:
                         yield AgentEvent(
                             type="usage",
