@@ -11,6 +11,7 @@ from openai import AsyncOpenAI
 from opentelemetry import context as otel_context
 from opentelemetry import trace
 
+
 _tracer = trace.get_tracer("pankb.agent")
 
 
@@ -36,6 +37,7 @@ class MCPClient:
         model: str = "gpt-4o-mini",
         auth=None,
         system_prompt: str | None = None,
+        prompt_version: str = "unknown",
     ):
         if not mcp_server_url:
             raise ValueError("mcp_server_url is required")
@@ -50,7 +52,8 @@ class MCPClient:
         self.openai = openai_client
         self.tools_cache: list[dict] = []
         self.messages: list[dict] = []
-        self.system_prompt = system_prompt 
+        self.system_prompt = system_prompt
+        self.prompt_version = prompt_version
 
     def _create_mcp_client(self) -> Client:
         return Client(self.mcp_server_url, auth=self.auth)
@@ -166,6 +169,7 @@ class MCPClient:
         agent_span = _tracer.start_span("agent.chat")
         agent_span.set_attribute("openinference.span.kind", "AGENT")
         agent_span.set_attribute("agent.model", self.model)
+        agent_span.set_attribute("agent.prompt_version", self.prompt_version)
         agent_span.set_attribute("input.value", user_message[:2000])
         if session_id:
             agent_span.set_attribute("session.id", session_id)

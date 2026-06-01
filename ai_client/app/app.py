@@ -20,8 +20,11 @@ from dotenv import load_dotenv
 from fastmcp.client.auth import BearerAuth
 from mcp_client_stream import AgentEvent, MCPClient
 from openai import AsyncOpenAI, OpenAI
+from prompts import get_prompt
 from render import render_tool_call, render_tool_request, render_tool_response
 from tracing import init_tracing
+
+PROMPT_VERSION, SYSTEM_PROMPT = get_prompt()
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
@@ -32,7 +35,6 @@ MCP_SERVER_URL = os.getenv("MCP_SERVER_URL")
 MCP_API_KEY = os.getenv("MCP_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 MODEL = os.getenv("OPENAI_MODEL")
-SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT")
 
 
 @st.cache_resource
@@ -85,7 +87,8 @@ async def init_client():
         openai_client=get_async_openai_client(),
         model=MODEL,
         auth=BearerAuth(token=MCP_API_KEY),
-        system_prompt=SYSTEM_PROMPT
+        system_prompt=SYSTEM_PROMPT,
+        prompt_version=PROMPT_VERSION,
     )
     await client.connect()
     return client
