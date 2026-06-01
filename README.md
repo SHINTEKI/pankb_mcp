@@ -92,7 +92,7 @@ Compose · GitHub Actions · uv
 
 | Tool | Description |
 |------|-------------|
-| search_pangenome_literature | Search pangenome research papers via RAG (VoyageAI embedding + Cohere reranking) over a curated bibliome of 833 open-access papers |
+| search_pangenome_literature | Search pangenome research papers via RAG (VoyageAI embedding + Cohere reranking) over a curated bibliome of 1011 open-access papers |
 
 
 ## Connection
