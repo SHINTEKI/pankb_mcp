@@ -1,0 +1,105 @@
+# Golden eval set for the PanKB agent.
+#
+# Each entry tests the agent's *tool-selection* behavior — not answer quality.
+# `expected_tools` is an UNORDERED set: scoring is true if every name appears
+# at least once in the actual tool-call sequence, AND no name outside
+# `forbidden_tools` appears. `expected_tools: []` asserts a refusal / no-tool
+# answer (used for out-of-domain negatives).
+#
+# Categories:
+#   query        — pure database lookup
+#   chart        — visualization tool
+#   navigation   — URL construction
+#   rag          — literature search
+#   multi_step   — requires >=2 tool calls (any order)
+#   negative     — should not call any tool
+
+- id: q1_family_count
+  category: query
+  question: "How many genomes does the Lactobacillaceae family contain in PanKB?"
+  expected_tools: [list_families]
+  forbidden_tools: []
+
+- id: q2_species_lookup
+  category: chart
+  question: "Show me the core/accessory/rare gene breakdown for Escherichia coli."
+  expected_tools: [plot_pangenome_class_distribution]
+  forbidden_tools: []
+
+- id: q3_genome_search
+  category: query
+  question: "Find genomes from Lactobacillus plantarum isolated in Italy."
+  expected_tools: [list_genomes]
+  forbidden_tools: []
+
+- id: q4_stats
+  category: query
+  question: "Give me the overall PanKB database statistics."
+  expected_tools: [get_stats]
+  forbidden_tools: []
+
+- id: q5_gene_frequency_plot
+  category: chart
+  question: "Plot the gene frequency histogram for Escherichia coli."
+  expected_tools: [plot_gene_frequency_histogram]
+  forbidden_tools: []
+
+- id: q6_pangenome_class_pie
+  category: chart
+  question: "Show me the core/accessory/rare pie chart for Lactiplantibacillus plantarum."
+  expected_tools: [plot_pangenome_class_distribution]
+  forbidden_tools: []
+
+- id: q7_cog_distribution
+  category: chart
+  question: "Visualize the COG functional category distribution for Mycobacterium tuberculosis."
+  expected_tools: [plot_cog_category_distribution]
+  forbidden_tools: []
+
+- id: q8_geographic
+  category: chart
+  question: "Where in the world are Pseudomonas aeruginosa genomes sourced from?"
+  expected_tools: [plot_geographic_distribution]
+  forbidden_tools: []
+
+- id: q9_species_url
+  category: navigation
+  question: "Give me the PanKB page link for Bacillus subtilis."
+  expected_tools: [get_species_url]
+  forbidden_tools: []
+
+- id: q10_family_url
+  category: navigation
+  question: "What's the URL for the Streptomycetaceae family page on PanKB?"
+  expected_tools: [get_family_url]
+  forbidden_tools: []
+
+- id: q11_rag_core_genome
+  category: rag
+  question: "What is the core genome and why does it matter in microbial pangenomics?"
+  expected_tools: [search_pangenome_literature]
+  forbidden_tools: []
+
+- id: q12_rag_openness
+  category: rag
+  question: "Explain how pangenome openness is calculated using Heaps' law."
+  expected_tools: [search_pangenome_literature]
+  forbidden_tools: []
+
+- id: q13_multi_step_query_then_plot
+  category: multi_step
+  question: "How many genomes are in the Lactobacillaceae family, and show me their distribution across countries."
+  expected_tools: [list_families, plot_geographic_distribution]
+  forbidden_tools: []
+
+- id: q14_multi_step_two_plots
+  category: multi_step
+  question: "Compare the COG category distributions for Escherichia coli and Bacillus subtilis side by side."
+  expected_tools: [plot_cog_category_distribution]   # called at least twice in practice; we only assert presence
+  forbidden_tools: []
+
+- id: q15_negative_out_of_domain
+  category: negative
+  question: "What's the weather in Copenhagen tomorrow?"
+  expected_tools: []
+  forbidden_tools: [list_families, list_species, list_genomes, list_genes, get_stats, search_pangenome_literature]
